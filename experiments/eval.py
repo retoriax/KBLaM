@@ -50,7 +50,6 @@ Please answer the question in a very compact manner with format: "The {property}
 '''
 
 
-
 def _format_Q_llama(Q: str):
     return (
         "<|start_header_id|>user<|end_header_id|> " + Q + "<|eot_id|>" + "<|start_header_id|>assistant<|end_header_id|>"
@@ -89,9 +88,6 @@ def answer_question(tokenizer, model, Q, kb=None, kb_layer_frequency=3, topk_siz
     print(input_str)
     tokenizer_output = tokenizer(input_str, return_tensors='pt', padding=True).to('cuda')
     input_ids, attention_masks = tokenizer_output['input_ids'], tokenizer_output['attention_mask']
-    
-
-    
 
     with torch.autograd.no_grad():
         if topk_size != -1:
@@ -101,12 +97,14 @@ def answer_question(tokenizer, model, Q, kb=None, kb_layer_frequency=3, topk_siz
         if kb_scale_factor == -1:
             kb_scale_factor = None
 
-        kb_config = KBLaMConfig(sep_query_head=True, 
-                            kb_scale_factor=kb_scale_factor,
-                            top_k_kb=topk_size,
-                            dynamic_sparsify=dynamic_sparsify,
-                            kb_layer_frequency= kb_layer_frequency)
-        
+        kb_config = KBLaMConfig(
+            sep_query_head=True,
+            kb_scale_factor=kb_scale_factor,
+            top_k_kb=topk_size,
+            dynamic_sparsify=dynamic_sparsify,
+            kb_layer_frequency=kb_layer_frequency,
+        )
+
         outputs = model.generate(
             input_ids=input_ids,
             attention_mask=attention_masks,
@@ -114,7 +112,7 @@ def answer_question(tokenizer, model, Q, kb=None, kb_layer_frequency=3, topk_siz
             max_new_tokens=150,
             tokenizer=tokenizer,
             output_attentions=True,
-            kb_config=kb_config
+            kb_config=kb_config,
         ).squeeze()
     outputs = tokenizer.decode(outputs, skip_special_tokens=False)
 
@@ -168,7 +166,7 @@ def perform_eval(
     topk_size=-1,
     kb_scale_factor=-1,
     multi_entites=-1,
-    remove_sorry=False
+    remove_sorry=False,
 ):
     np.random.seed(seed)
     kb_idx = np.random.randint(0, len(kb_retriever.dataset), kb_size)
@@ -230,9 +228,9 @@ def perform_eval(
                 ins_prompt = zero_shot_prompt_multi_entities
             else:
                 ins_prompt = zero_shot_prompt
-            model_output = answer_question(tokenizer, model, ins_prompt + Q, kb=None, kb_layer_frequency=kb_layer_frequency).split(
-                Q
-            )[1]
+            model_output = answer_question(
+                tokenizer, model, ins_prompt + Q, kb=None, kb_layer_frequency=kb_layer_frequency
+            ).split(Q)[1]
         # print(model_output)
         if remove_sorry:
             if 'sorry' in model_output:
@@ -275,60 +273,60 @@ def perform_eval(
     return results, bert_scores + list(rogue_score.values())
 
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--seed', type=int)
-parser.add_argument('--dataset_dir', type=str)
-parser.add_argument('--test_dataset', type=str)  # Source of test KB, assume it is a KV pair
-parser.add_argument('--llm_base_dir', type=str)
-parser.add_argument('--model_dir', type=str)
-parser.add_argument('--encoder_dir', type=str)
-parser.add_argument('--save_dir', type=str)
-parser.add_argument('--kb_layer_frequency', type=int, default=3)
-parser.add_argument('--ckpt_idx', type=int, default=10000)
-parser.add_argument('--lr', type=float, default=0.0005)
-parser.add_argument('--kb_size', type=int, default=200)
-parser.add_argument('--fancy_instruction', action=argparse.BooleanOptionalAction, default=False)
-parser.add_argument('--encoder_spec', type=str, default='OAI')
-parser.add_argument('--use_precomputed_embd', action='store_true', default=False)
-parser.add_argument('--topk_size', type=int, default=-1)
-parser.add_argument('--multi_entites', type=int, default=-1)
-parser.add_argument('--kb_scale_factor', type=int, default=None)
+parser = argparse.ArgumentParser(description="Evaluation script")
+
+# Add arguments that will be shared across all subcommands
+parent_parser = argparse.ArgumentParser(add_help=False)
+
+parent_parser.add_argument('--seed', type=int)
+parent_parser.add_argument('--dataset_dir', type=str)
+parent_parser.add_argument('--test_dataset', type=str)  # Source of test KB, assume it is a KV pair
+parent_parser.add_argument('--llm_base_dir', type=str)
+parent_parser.add_argument('--model_dir', type=str)
+parent_parser.add_argument('--encoder_dir', type=str)
+parent_parser.add_argument('--save_dir', type=str)
+parent_parser.add_argument('--kb_layer_frequency', type=int, default=3)
+parent_parser.add_argument('--ckpt_idx', type=int, default=10000)
+parent_parser.add_argument('--lr', type=float, default=0.0005)
+parent_parser.add_argument('--kb_size', type=int, default=200)
+parent_parser.add_argument('--fancy_instruction', action=argparse.BooleanOptionalAction, default=False)
+parent_parser.add_argument('--encoder_spec', type=str, default='OAI')
+parent_parser.add_argument('--kb_scale_factor', type=int, default=None)
 # parser.add_argument('--train_dataset_name', type=str, default='gpt_data')
-parser.add_argument(
+parent_parser.add_argument("--llm_type", type=str, default="phi3", choices=["llama3", "phi3"])
+
+# Create subparsers
+subparsers = parser.add_subparsers(dest='command', required=True)
+
+# Create the parser for the generation command
+gen_parser = subparsers.add_parser('generation', parents=[parent_parser], help='Evaluate generation')
+
+
+gen_parser.add_argument('--use_precomputed_embd', action='store_true', default=False)
+gen_parser.add_argument('--topk_size', type=int, default=-1)
+gen_parser.add_argument('--multi_entites', type=int, default=-1)
+gen_parser.add_argument(
     '--no_outlier', action=argparse.BooleanOptionalAction, default=False
 )  # Use ckpts trained without outlier
 # Evaluation modes:
 # - kb: Append KB tokens in the front
 # - icl: Flatten the KB as string as prompts
 # - zeroshot: No prompts, answer the questions with LLM's imagination
-parser.add_argument('--eval_mode', type=str, choices=['kb', 'icl', 'zeroshot'], default='kb')
-parser.add_argument(
+gen_parser.add_argument('--eval_mode', type=str, choices=['kb', 'icl', 'zeroshot'], default='kb')
+gen_parser.add_argument(
     '--remove_sorry', action=argparse.BooleanOptionalAction, default=False
 )  # Filter out sorry answer in the output
-parser.add_argument("--llm_type", type=str, default="phi3", choices=["llama3", "phi3"])
-parser.add_argument(
+gen_parser.add_argument(
     "--kb_token_layer_frequency", type=int, default=None, help="Introduce QA with extended open-ended parts"
 )
 
+# Create the parser for the generation command
+acc_parser = subparsers.add_parser('accuracy', parents=[parent_parser], help='Evaluate accuracy')
 
-# Dir ish
-
-parser.add_argument("--ckpt_dir", type=str)  # Where is all the ckpts saved (models and encoder)?
-parser.add_argument("--attn_save_dir", type=str, default="")  # Where should the attention mask saved?
-parser.add_argument("--log_save_dir", type=str)  # Where is the accuracy results be saved?
-# Other configs
-
-
-parser.add_argument("--train_kb_size", type=str, default="dynamic")
-
-
-
-
-parser.add_argument("--fancy_question", action=argparse.BooleanOptionalAction, default=False)
-
-
-parser.add_argument("--train_dataset_name", type=str, default="gpt_data")
-parser.add_argument("--use_shift_match", action=argparse.BooleanOptionalAction, default=False)
+acc_parser.add_argument("--attn_save_dir", type=str, default="")  # Where should the attention mask saved?
+acc_parser.add_argument("--log_save_dir", type=str)  # Where is the accuracy results be saved?
+acc_parser.add_argument("--fancy_question", action=argparse.BooleanOptionalAction, default=False)
+acc_parser.add_argument("--use_shift_match", action=argparse.BooleanOptionalAction, default=False)
 
 
 def eval_generate():
@@ -369,7 +367,6 @@ def eval_generate():
             'float32'
         )[validation_part_start_idx:]
         precomputed_embd = (key_embds, value_embds)
-
 
     kb_layer_frequency = kb_layer_frequency
     encoder_spec = encoder_model_spec
@@ -459,9 +456,8 @@ def eval_generate():
     text_file.write(gen_results)
 
 
-
 def eval_accuracy():
-        
+
     TEST_BATCH_SIZE = 50
 
     args = parser.parse_args()
@@ -493,74 +489,53 @@ def eval_accuracy():
 
     sm_string = "" if not use_shift_match else "_sm"
 
-    key_embds = np.load(os.path.join(dataset_dir, f"{test_dataset}_{encoder_model_spec}_embd_key{sm_string}.npy")).astype(
-        "float32"
-    )[validation_part_start_idx:]
+    key_embds = np.load(
+        os.path.join(dataset_dir, f"{test_dataset}_{encoder_model_spec}_embd_key{sm_string}.npy")
+    ).astype("float32")[validation_part_start_idx:]
     value_embds = np.load(
         os.path.join(dataset_dir, f"{test_dataset}_{encoder_model_spec}_embd_value{sm_string}.npy")
     ).astype("float32")[validation_part_start_idx:]
 
-    train_dataset_name = args.train_dataset_name
+    # train_dataset_name = args.train_dataset_name
     # lr = args.lr
 
     if args.kb_layer_frequency == -1:
-        kb_layer_frequency_str = ""
         kb_layer_frequency = 3
-    else:
-        kb_layer_frequency_str = f"KBTokenLayerFreq{kb_layer_frequency}"
+    # config_name = (
+    #     f"traindataset_{train_dataset_name}_testdataset_{test_dataset}_"
+    #     f"kb_layer_freq_{kb_layer_frequency}_trainkbsize_{train_kb_size}"
+    #     f"encoder_{encoder_model_spec}_step_{ckpt_idx}_kbsize_{kb_size}_seed_{seed}"
+    # )
 
-    config_name = (
-        f"traindataset_{train_dataset_name}_testdataset_{test_dataset}_"
-        f"kb_layer_freq_{kb_layer_frequency}_trainkbsize_{train_kb_size}"
-        f"encoder_{encoder_model_spec}_step_{ckpt_idx}_kbsize_{kb_size}_seed_{seed}"
-    )
+    # if fancy_question:
+    #     config_name = "UseFancyQuestion_" + config_name
 
-    if fancy_question:
-        config_name = "UseFancyQuestion_" + config_name
+    # if fancy_instruction:
+    #     config_name = "UseFancyIns_" + config_name
 
-    if fancy_instruction:
-        config_name = "UseFancyIns_" + config_name
+    # if kb_scale_factor is not None:
+    #     config_name = f"ScaleFactor_{kb_scale_factor}" + config_name
 
-    if kb_scale_factor is not None:
-        config_name = f"ScaleFactor_{kb_scale_factor}" + config_name
+    # if use_shift_match:
+    #     config_name = f"UseSM_" + config_name
 
-    if use_shift_match:
-        config_name = f"UseSM_" + config_name
-
-    if fancy_instruction:
-        extended_qa_spec = "UseExtendedQA"
-        outlier_spec = "UseOutlier1"
-        multi_entity_string = "MultiEntities2"
-    else:
-        extended_qa_spec = ""
-        outlier_spec = ""
-        multi_entity_string = ""
+    # if fancy_instruction:
+    #     extended_qa_spec = "UseExtendedQA"
+    #     outlier_spec = "UseOutlier1"
+    #     multi_entity_string = "MultiEntities2"
+    # else:
+    #     extended_qa_spec = ""
+    #     outlier_spec = ""
+    #     multi_entity_string = ""
 
     # kb_size_spec = f"KBSize{train_kb_size}"
     # duplicate_spec = "NoDuplicate"
-
-    # model_name = (
-    #     f"stage1_0__lr_{lr}{kb_layer_frequency_str}{extended_qa_spec}{multi_entity_string}{outlier_spec}{duplicate_spec}{kb_size_spec}"
-    #     f"SepQueryHeadUseDataAugKeyFromkey_{encoder_spec}_{train_dataset_name}_llama3_step_{ckpt_idx}"
-    # )
-    # encoder_name = (
-    #     f"stage1_0__lr_{lr}{kb_layer_frequency_str}{extended_qa_spec}{multi_entity_string}{outlier_spec}{duplicate_spec}{kb_size_spec}"
-    #     f"SepQueryHeadUseDataAugFineTuneQueryKeyFromkey_{train_dataset_name}_{encoder_spec}_step_{ckpt_idx}"
-    # )
-
 
     kb_layer_frequency = kb_layer_frequency
     encoder_spec = encoder_spec
     tokenizer = AutoTokenizer.from_pretrained(llm_base_dir, trust_remote_code=True, padding_side="left")
     tokenizer.pad_token = "^"
 
-    # model = KblamForCausalLM.from_pretrained(
-    #     os.path.join(ckpt_dir, model_name),
-    #     device_map="cuda",
-    #     torch_dtype="auto",
-    #     trust_remote_code=True,
-    # )
-    # model_path = os.path.join(ckpt_dir, model_name)
     if llm_type == "llama3":
         model = KblamLlamaForCausalLM.from_pretrained(
             model_path,
@@ -576,11 +551,9 @@ def eval_accuracy():
             trust_remote_code=True,
         )
 
-    
     model.generation_config.pad_token_id = tokenizer.pad_token_id
     model.generation_config.eos_token_id = 128009
     model.eval()
-    print(encoder_spec.upper())
     encoder = KBEncoder(
         encoder_name=encoder_spec.upper(),
         projector_type="linear",
@@ -589,13 +562,6 @@ def eval_accuracy():
         frozen_base_model=True,
         projector_kwargs={"mlp_depth": 1, "mlp_hidden_dim": 512},
         device=torch.device("cuda"),
-    )
-
-    kb_retriever = KBRetriever(
-        encoder,
-        dataset,
-        key_embds=key_embds,
-        value_embds=value_embds,
     )
 
     encoder.load_state_dict(torch.load(encoder_path))
@@ -612,42 +578,16 @@ def eval_accuracy():
         kb_embedding_key, kb_embedding_val = kb_embedding_real
         kb_embedding_real = (kb_embedding_key, kb_embedding_val)
 
-    format_func_map = {
-        "llama3":_format_Q_llama,
-        "phi3":_format_Q_phi3
-    }
+    format_func_map = {"llama3": _format_Q_llama, "phi3": _format_Q_phi3}
 
-    
-    # N = kb_size
-    # if not fancy_question:
-    #     input_strs = [
-    #         "<|start_header_id|>user<|end_header_id|> "
-    #         + dataset_subset[i]["Q"]
-    #         + "<|eot_id|>"
-    #         + "<|start_header_id|>assistant<|end_header_id|>"
-    #         for i in range(TEST_BATCH_SIZE)
-    #     ]
-    # else:
-    #     input_strs = [
-    #         "<|start_header_id|>user<|end_header_id|> "
-    #         + aug_row(dataset_subset[i])
-    #         + "<|eot_id|>"
-    #         + "<|start_header_id|>assistant<|end_header_id|>"
-    #         for i in range(TEST_BATCH_SIZE)
-    #     ]
+    config_name = "random_config_name"  # TODO:fix
 
     N = kb_size
     if not fancy_question:
-        input_strs_gen = (
-            dataset_subset[i]["Q"]
-            for i in range(TEST_BATCH_SIZE)
-        )
+        input_strs_gen = (dataset_subset[i]["Q"] for i in range(TEST_BATCH_SIZE))
     else:
-        input_strs_gen = (
-            aug_row(dataset_subset[i])
-            for i in range(TEST_BATCH_SIZE)
-        )
-    input_strs  = [format_func_map[llm_type](ex) for ex in input_strs_gen]
+        input_strs_gen = (aug_row(dataset_subset[i]) for i in range(TEST_BATCH_SIZE))
+    input_strs = [format_func_map[llm_type](ex) for ex in input_strs_gen]
 
     tokenizer_output = tokenizer(input_strs, return_tensors="pt", padding=True).to("cuda")
     input_ids, attention_masks = (
@@ -658,12 +598,9 @@ def eval_accuracy():
     print(kb_embedding_real[0].shape)
 
     kb_config = KBLaMConfig(
-        sep_query_head=True, 
-        kb_layer_frequency= kb_layer_frequency,
+        sep_query_head=True,
+        kb_layer_frequency=kb_layer_frequency,
         kb_scale_factor=kb_scale_factor,
-        # save_attn_weight=True,
-        # experiment_setting=config_name,
-        # attn_save_dir=args.attn_save_dir
     )
     print(f"starting {type(model)} {args.attn_save_dir} {config_name}")
     with torch.autograd.no_grad():
@@ -671,24 +608,13 @@ def eval_accuracy():
             input_ids=input_ids,
             attention_mask=attention_masks,
             kb_kvs=kb_embedding_real,
-            # kb_kv=None,
             max_new_tokens=60,
-            # stop_strings=['. ', '\n'],
             tokenizer=tokenizer,
             output_attentions=True,
-            
-            kb_config = kb_config,
+            kb_config=kb_config,
             save_attention_weights=True,
             attention_save_loc=args.attn_save_dir,
             attention_file_base_name=config_name,
-            # kb_config={
-            #     "sep_query_head": True,
-            #     "kb_layer_frequency": kb_layer_frequency,
-            #     "save_attn_weight": True,
-            #     "experiment_setting": config_name,
-            #     "attn_save_dir": args.attn_save_dir,
-            #     "kb_scale_factor": kb_scale_factor,
-            # },
         )
 
     ranges = range(0, 32, kb_layer_frequency)
@@ -706,12 +632,22 @@ def eval_accuracy():
         accs.append((acc, top_5_acc))
         # confidence = softmax(weight.mean(1), -1).max()
         # confidences.append(confidence)
-    print(accs)
     save_path = Path(save_dir)
     save_path.mkdir(exist_ok=True, parents=True)
-    
-    np.save(save_path/f"{config_name}_acc.npy", np.array(accs))
+
+    np.save(save_path / f"{config_name}_acc.npy", np.array(accs))
+
+
+def main():
+    args = parser.parse_args()
+    print(args)
+    if args.command == 'generate':
+        eval_generate()
+    elif args.command == 'accuracy':
+        eval_accuracy()
+    else:
+        raise ValueError(f"command {args.command} not recognised")
+
 
 if __name__ == "__main__":
-    # eval_generate()
-    eval_accuracy()
+    main()
