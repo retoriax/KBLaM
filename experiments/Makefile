@@ -172,5 +172,43 @@ eval-acc-phi3-oai: ## Eval kb adapter
 		--llm_type "phi3" \
 		--attn_save_dir "/datadisk/kblam_attention" \
 		--log_save_dir "/datadisk/kblam_attention/acc_results" 
-		
+
+
+eval-ref-phi3-oai: ## Eval kb adapter
+	python eval.py refusal \
+				--seed 1607 \
+				--dataset_dir ${DATASET_DIR} \
+				--test_dataset synthetic_data \
+				--llm_base_dir ${PHI3_HF} \
+				--encoder_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugFineTuneQueryKeyFromkey_synthetic_data_OAI_step_20000' \
+				--model_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugKeyFromkey_OAI_synthetic_data_phi3_step_20000' \
+				--ckpt_idx 20000 \
+				--encoder_spec oai \
+				--use_precomputed_embd \
+				--eval_mode 'kb' \
+				--save_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.2_eval' \
+				--kb_token_layer_frequency ${KB_LAYER_FREQ} \
+				--llm_type "phi3" \
+				--kb_size 100
+
+
+eval-basic-phi3-oai: ## Eval kb adapter
+	python eval.py \
+				basic \
+				--seed 1607 \
+				--test_dataset synthetic_data \
+				--ckpt_idx 20000 \
+				--llm_base_dir ${PHI3_HF} \
+				--encoder_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugFineTuneQueryKeyFromkey_synthetic_data_OAI_step_20000' \
+				--model_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugKeyFromkey_OAI_synthetic_data_phi3_step_20000' \
+				--dataset_dir ${DATASET_DIR} \
+				--encoder_spec oai \
+				--use_precomputed_embd \
+				--eval_mode 'kb' \
+				--save_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.2_eval' \
+				--kb_token_layer_frequency ${KB_LAYER_FREQ} \
+				--llm_type "phi3" \
+				--kb_size 100 \
+				--exp_config_str "1000#bbb"
+
 .PHONY: train train-oai

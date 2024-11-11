@@ -50,6 +50,13 @@ Please answer the question in a very compact manner with format: "The {property}
 '''
 
 
+
+def softmax(x, axis):
+    """Compute softmax values for each sets of scores in x."""
+    e_x = np.exp(x - np.max(x))
+    return e_x / e_x.sum(axis=axis)
+
+
 def _format_Q_llama(Q: str):
     return (
         "<|start_header_id|>user<|end_header_id|> " + Q + "<|eot_id|>" + "<|start_header_id|>assistant<|end_header_id|>"
@@ -85,7 +92,7 @@ def answer_question(tokenizer, model, Q, kb=None, kb_layer_frequency=3, topk_siz
     for m in model_question_format_mapping:
         if isinstance(model, m):
             input_str = model_question_format_mapping[m](Q)
-    print(input_str)
+    # print(input_str)
     tokenizer_output = tokenizer(input_str, return_tensors='pt', padding=True).to('cuda')
     input_ids, attention_masks = tokenizer_output['input_ids'], tokenizer_output['attention_mask']
 
@@ -116,7 +123,6 @@ def answer_question(tokenizer, model, Q, kb=None, kb_layer_frequency=3, topk_siz
         ).squeeze()
     outputs = tokenizer.decode(outputs, skip_special_tokens=False)
 
-    # pruned_output = model_prune_format_mapping[model](outputs)
     for m in model_prune_format_mapping:
         if isinstance(model, m):
             pruned_output = model_prune_format_mapping[m](outputs)
@@ -162,7 +168,6 @@ def perform_eval(
     kb_layer_frequency=3,
     kb_size=250,
     seed=1,
-    precomputed_kb=None,
     topk_size=-1,
     kb_scale_factor=-1,
     multi_entites=-1,
@@ -177,7 +182,6 @@ def perform_eval(
     prompt_strs = ''
     for k, v in zip(key_str, value_str):
         prompt_strs += f'{k} is {v}; '
-    kv_pairs = (key_str, value_str)
 
     kb_embedding = kb_retriever.get_key_embeddings(kb_idx)
 
@@ -273,6 +277,96 @@ def perform_eval(
     return results, bert_scores + list(rogue_score.values())
 
 
+
+def perform_eval_refusal(
+    model,
+    tokenizer,
+    kb_retriever,
+    eval_mode='kb',
+    kb_layer_frequency=3,
+    kb_size=250,
+    seed=1,
+    outlier_ratio=0.2,
+    topk_size=-1,
+    question_size=100,
+    kb_scale_factor=100,
+):
+
+    instruction_prompts = (
+        'Please answer questions based on the given text with format: "The {property} of {name} is {description}",'
+        ' if relevant information cannot be found in the text, please respond "I am sorry I cannot find relevant information in the KB".'
+    )
+    zero_shot_prompt = """
+    Please answer the question in a very compact manner with format: The {property} of {name} is {description}
+    """
+
+    np.random.seed(seed)
+    kb_idx = np.random.randint(0, len(kb_retriever.dataset), kb_size)
+    test_kb = [kb_retriever.dataset[idx] for idx in kb_idx]
+    kb_embedding = ()
+    key_str = [row["key_string"] for row in test_kb]
+    value_str = [row["description"] for row in test_kb]
+    prompt_strs = ""
+    for k, v in zip(key_str, value_str):
+        prompt_strs += f"{k} is {v}; "
+   
+    kb_embedding = kb_retriever.get_key_embeddings(kb_idx)
+
+    model_outputs = []
+    answers = []
+    # answer_question
+    outlier_idx = np.arange(len(kb_retriever.dataset))
+    outlier_idx = outlier_idx[~np.isin(outlier_idx, kb_idx)]
+    np.random.shuffle(outlier_idx)
+    question_size = min(kb_size, question_size)
+    outlier_idx = outlier_idx[: int(question_size * outlier_ratio)]
+    test_kb = test_kb[: int(question_size * (1 - outlier_ratio))] + [kb_retriever.dataset[idx] for idx in outlier_idx]
+    change_point = int(question_size * (1 - outlier_ratio))
+    for i, row in tqdm(enumerate(test_kb)):
+        Q = row["Q"]
+        if eval_mode == "kb":
+            model_output = answer_question(
+                tokenizer,
+                model,
+                Q,
+                kb=kb_embedding,
+                kb_layer_frequency=kb_layer_frequency,
+                topk_size=topk_size,
+                kb_scale_factor=kb_scale_factor,
+            ).split(Q)[1]
+
+        elif eval_mode == "icl":
+
+            model_output = answer_question(
+                tokenizer,
+                model,
+                instruction_prompts + prompt_strs + Q, 
+                kb=None, 
+                kb_layer_frequency=kb_layer_frequency,
+            ).split(Q)[1]
+        elif eval_mode == "zeroshot":
+            model_output = answer_question(
+                tokenizer,
+                model,
+                zero_shot_prompt + Q, 
+                kb=None, 
+                kb_layer_frequency=kb_layer_frequency,
+            ).split(Q)[1]
+        model_outputs.append(model_output)
+        if i < change_point:
+            answers.append(row["description"])
+        else:
+            answers.append("Cannot find relevant information in the KB")
+    true_label = [0] * change_point + [1] * int(question_size * outlier_ratio)
+    prediction = [int("sorry" in model_output) for model_output in model_outputs]
+    print(f"KB size: {kb_size}, mode: {eval_mode}, outlier ratio: {outlier_ratio}")
+    results = ""
+    for a, A in zip(model_outputs, answers):
+        results += f"Model output: {a}\nTrue answer: {A}\n-------\n"
+    return results, np.array([prediction, true_label])
+
+
+
 parser = argparse.ArgumentParser(description="Evaluation script")
 
 # Add arguments that will be shared across all subcommands
@@ -327,6 +421,80 @@ acc_parser.add_argument("--attn_save_dir", type=str, default="")  # Where should
 acc_parser.add_argument("--log_save_dir", type=str)  # Where is the accuracy results be saved?
 acc_parser.add_argument("--fancy_question", action=argparse.BooleanOptionalAction, default=False)
 acc_parser.add_argument("--use_shift_match", action=argparse.BooleanOptionalAction, default=False)
+
+
+# Create the parser for the refusal command
+acc_parser = subparsers.add_parser('refusal', parents=[parent_parser], help='Evaluate refusal')
+
+acc_parser.add_argument('--use_precomputed_embd', action='store_true', default=False)
+acc_parser.add_argument('--topk_size', type=int, default=-1)
+acc_parser.add_argument('--multi_entites', type=int, default=-1)
+acc_parser.add_argument(
+    '--no_outlier', action=argparse.BooleanOptionalAction, default=False
+)  # Use ckpts trained without outlier
+# Evaluation modes:
+# - kb: Append KB tokens in the front
+# - icl: Flatten the KB as string as prompts
+# - zeroshot: No prompts, answer the questions with LLM's imagination
+acc_parser.add_argument('--eval_mode', type=str, choices=['kb', 'icl', 'zeroshot'], default='kb')
+acc_parser.add_argument(
+    '--remove_sorry', action=argparse.BooleanOptionalAction, default=False
+)  # Filter out sorry answer in the output
+acc_parser.add_argument(
+    "--kb_token_layer_frequency", type=int, default=None, help="Introduce QA with extended open-ended parts"
+)
+
+
+# Create the parser for the basic command
+basic_parser = subparsers.add_parser('basic', parents=[parent_parser], help='Evaluate refusal')
+basic_parser.add_argument('--use_precomputed_embd', action='store_true', default=False)
+basic_parser.add_argument("--attn_summary_save_dir", type=str, default="")  # Where should the attention mask saved?
+basic_parser.add_argument('--topk_size', type=int, default=-1)
+# basic_parser.add_argument('--multi_entites', type=int, default=-1)
+basic_parser.add_argument(
+    '--no_outlier', action=argparse.BooleanOptionalAction, default=False
+)  # Use ckpts trained without outlier
+# Evaluation modes:
+# - kb: Append KB tokens in the front
+# - icl: Flatten the KB as string as prompts
+# - zeroshot: No prompts, answer the questions with LLM's imagination
+basic_parser.add_argument('--eval_mode', type=str, choices=['kb', 'icl', 'zeroshot'], default='kb')
+# basic_parser.add_argument(
+#     '--remove_sorry', action=argparse.BooleanOptionalAction, default=False
+# )  # Filter out sorry answer in the output
+basic_parser.add_argument(
+    "--kb_token_layer_frequency", type=int, default=None, help="Introduce QA with extended open-ended parts"
+)
+basic_parser.add_argument("--subset_size", default=100, type=int)
+
+basic_parser.add_argument("--exp_config_str", type=str)
+basic_parser.add_argument("--sample_size", default=5, type=int)
+# # parser.add_argument("--use_oai_embd", action="store_true")
+# parser.add_argument("--fine_tune_query", action="store_true")
+
+# parser.add_argument(
+#     "--key_embd_src",
+#     type=str,
+#     default="key",
+#     choices=["key", "answers", "questions", None],
+# )
+# parser.add_argument("--use_data_aug", action="store_true")
+
+
+
+basic_parser.add_argument(
+    "--output_dir", type=str, default=""
+)  # Where is the attention mask saved?
+# parser.add_argument(
+#     "--attn_summary_save_dir", type=str, default=""
+# )  # Where is the attention mask saved?
+
+
+
+# parser.add_argument(
+#     "--duplicate_true_kb", action=argparse.BooleanOptionalAction, default=True
+# )  # Place to save the training log
+
 
 
 def eval_generate():
@@ -566,7 +734,7 @@ def eval_accuracy():
 
     encoder.load_state_dict(torch.load(encoder_path))
 
-    print("******")
+    # print("******")
     dataset_subset_idx = np.random.choice(len(dataset), kb_size, replace=False)
     # dataset_subset_idx = np.random.choice(np.arange(100000, len(dataset)), subset_size, replace=False)
     dataset_subset = [dataset[i] for i in dataset_subset_idx]
@@ -595,14 +763,14 @@ def eval_accuracy():
         tokenizer_output["attention_mask"],
     )
     kb_embedding_real = (kb_embedding_real[0], kb_embedding_real[1])
-    print(kb_embedding_real[0].shape)
+    # print(kb_embedding_real[0].shape)
 
     kb_config = KBLaMConfig(
         sep_query_head=True,
         kb_layer_frequency=kb_layer_frequency,
         kb_scale_factor=kb_scale_factor,
     )
-    print(f"starting {type(model)} {args.attn_save_dir} {config_name}")
+    # print(f"starting {type(model)} {args.attn_save_dir} {config_name}")
     with torch.autograd.no_grad():
         outputs_true_kb = model.generate(
             input_ids=input_ids,
@@ -638,6 +806,439 @@ def eval_accuracy():
     np.save(save_path / f"{config_name}_acc.npy", np.array(accs))
 
 
+
+def eval_refusal():
+    
+    args = parser.parse_args()
+    seed = args.seed
+    dataset_dir = args.dataset_dir
+    test_dataset = args.test_dataset
+    llm_base_dir = args.llm_base_dir
+    kb_layer_frequency = args.kb_layer_frequency
+    ckpt_idx = args.ckpt_idx
+    eval_mode = args.eval_mode
+    kb_size = args.kb_size
+    fancy_instruction = args.fancy_instruction
+    use_precomputed_embd = args.use_precomputed_embd
+    llm_type = args.llm_type
+    model_path = args.model_dir
+    encoder_path = args.encoder_dir
+    kb_scale_factor = args.kb_scale_factor
+        
+    validation_part_start_idx = 120000 if "gpt" in test_dataset else 0
+
+    dataset = json.load(open(os.path.join(dataset_dir, test_dataset + ".json")))[validation_part_start_idx:]
+
+    encoder_model_spec = args.encoder_spec
+    
+    lr = args.lr
+
+    if use_precomputed_embd:
+        key_embds = np.load(os.path.join(dataset_dir, f"{test_dataset}_{encoder_model_spec}_embd_key.npy")).astype(
+            "float32"
+        )[validation_part_start_idx:]
+        value_embds = np.load(os.path.join(dataset_dir, f"{test_dataset}_{encoder_model_spec}_embd_value.npy")).astype(
+            "float32"
+        )[validation_part_start_idx:]
+        
+    # kb_layer_frequency = kb_layer_frequency
+    encoder_spec = encoder_model_spec
+    tokenizer = AutoTokenizer.from_pretrained(llm_base_dir, trust_remote_code=True, padding_side="left")
+    tokenizer.pad_token = "^"
+
+    if llm_type == "llama3":
+        model = KblamLlamaForCausalLM.from_pretrained(
+            model_path,
+            device_map="cuda",
+            torch_dtype="auto",
+            trust_remote_code=True,
+        )
+    else:
+        model = KBLaMPhi3ForCausalLM.from_pretrained(
+            model_path,
+            device_map="cuda",
+            torch_dtype="auto",
+            trust_remote_code=True,
+        )
+
+
+    model.generation_config.pad_token_id = tokenizer.pad_token_id
+    model.generation_config.eos_token_id = 128009
+    model.eval()
+
+    encoder = KBEncoder(
+        encoder_name=encoder_spec.upper(),
+        projector_type="linear",
+        endpoint_url="",
+        out_dim=model.config.hidden_size * (model.config.num_hidden_layers // kb_layer_frequency + 1),
+        frozen_base_model=True,
+        projector_kwargs={"mlp_depth": 1, "mlp_hidden_dim": 512},  # Some arbitary numbers,
+        get_oai_embd_online=False if args.use_precomputed_embd else True,
+    )
+    encoder.load_state_dict(torch.load(encoder_path))
+
+
+    kb_retriever = KBRetriever(
+        encoder,
+        dataset,
+        key_embds=key_embds,
+        value_embds=value_embds,
+    )
+
+    gen_results, refusal_results = perform_eval_refusal(
+        model,
+        tokenizer,
+        kb_retriever,
+        eval_mode,
+        kb_layer_frequency,
+        seed=args.seed,
+        kb_size=kb_size,
+        topk_size=args.topk_size,
+        kb_scale_factor=kb_scale_factor,
+    )
+    mem_cost = torch.cuda.max_memory_reserved('cuda')
+    refusal_results.append(mem_cost)
+
+    exp_config = (
+        f"ScaleFactor_{args.kb_scale_factor}_lr_{lr}_kblayer_frequency_{kb_layer_frequency}_encoder_{encoder_spec}_ckptidx_{ckpt_idx}"
+        f"testset_{test_dataset}_kbsize_{kb_size}_evalmode_{eval_mode}_seed_{seed}"
+    )
+
+    if args.topk_size != -1:
+        exp_config = f"TopK_{args.topk_size}" + exp_config
+
+    if fancy_instruction:
+        exp_config = "FancyInstruction_" + exp_config
+
+    np.save(os.path.join(args.save_dir, "OutLierTest" + exp_config), refusal_results)
+
+    text_file = open(os.path.join(args.save_dir, "OutLierTest" + exp_config + ".txt"), "w")
+    text_file.write(gen_results)
+
+
+
+def basic_eval():
+        
+    args = parser.parse_args()
+    seed = args.seed
+    ckpt_idx = args.ckpt_idx
+    subset_size = args.subset_size
+    # train_dataset_name = args.train_dataset
+    test_dataset_name = args.test_dataset
+    # N = args.N
+    sample_size = args.sample_size
+    # llm_ckpt_idx = args.llm_ckpt_idx
+    # use_oai_embd = args.use_oai_embd
+    use_precomputed_embd = args.use_precomputed_embd
+    # encoder_model_spec = args.encoder_spec
+    # use_ans_embd = args.use_ans_embd
+    # key_embd_src = args.key_embd_src
+    # use_data_aug = args.use_data_aug
+    dataset_dir = args.dataset_dir
+    llm_base_dir = args.llm_base_dir
+    test_dataset = args.test_dataset
+    encoder_model_spec = args.encoder_spec
+    # ckpt_dir = args.ckpt_dir
+    output_dir = args.output_dir
+    attn_summary_save_dir = args.attn_summary_save_dir
+    # lr = args.lr
+    kb_size = args.kb_size
+    if kb_size == -1:
+        kb_size = None
+    # duplicate_true_kb = args.duplicate_true_kb
+    llm_type = args.llm_type
+    model_path = args.model_dir
+    encoder_path = args.encoder_dir
+    kb_layer_frequency = args.kb_layer_frequency
+    kb_scale_factor = args.kb_scale_factor
+
+    print(dataset_dir)
+    # if use_precomputed_embd:
+    #     print("Using pre-computed openai embedding")
+    #     key_embds = np.load(
+    #         os.path.join(dataset_dir, f"{test_dataset_name}_oai_embd_{key_embd_src}.npy")
+    #     ).astype("float32")[120000:]
+    #     value_embds = np.load(
+    #         os.path.join(dataset_dir, f"{test_dataset_name}_oai_embd_value.npy")
+    #     ).astype("float32")[120000:]
+   
+
+    validation_part_start_idx = 120000 if 'gpt' in test_dataset else 0
+    dataset = json.load(open(os.path.join(dataset_dir, test_dataset + '.json')))[validation_part_start_idx:]
+
+    if use_precomputed_embd:
+        key_embds = np.load(os.path.join(dataset_dir, f'{test_dataset}_{encoder_model_spec}_embd_key.npy')).astype(
+            'float32'
+        )[validation_part_start_idx:]
+        value_embds = np.load(os.path.join(dataset_dir, f'{test_dataset}_{encoder_model_spec}_embd_value.npy')).astype(
+            'float32'
+        )[validation_part_start_idx:]
+        # precomputed_embd = (key_embds, value_embds)
+
+    exp_config_str = args.exp_config_str
+    change_point, fine_tune_query = exp_config_str.split("#")
+    change_point = int(change_point)
+    fine_tune_query = fine_tune_query == "Yes"
+
+    sep_query_head = True
+    actual_kb_token_layer_frequency = 3
+    if sep_query_head:
+        # TODO: add code for testing this strategy
+        print("Having seperate query head for KB!")
+        exp_config_str = "SepQueryHead" + exp_config_str
+
+    # if lr is not None:
+    #     exp_config_str = f"lr_{lr}" + exp_config_str
+
+    # if not duplicate_true_kb:
+    #     exp_config_str = f"NoDuplicate" + exp_config_str
+
+    # if kb_size is not None:
+    #     exp_config_str = f"KBSize{kb_size}" + exp_config_str
+
+
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    os.environ["ATTN_WEIGHT_EXP_SETTING"] = (
+        f"{exp_config_str}__step_{ckpt_idx}__kb_{subset_size}__seed_{seed}"
+    )
+    os.environ["ATTN_SAVE_DIR"] = output_dir
+    os.environ["EVAL_MODE"] = "1"
+
+
+    llm_model_spec = llm_base_dir
+    tokenizer = AutoTokenizer.from_pretrained(
+        llm_model_spec, trust_remote_code=True, padding_side="left"
+    )
+    tokenizer.pad_token_id = 128001
+    tokenizer.pad_token = '^'
+    if not fine_tune_query:#TODO: make it load the default llm checkpoint
+        if llm_type == "llama3":
+            model = KblamLlamaForCausalLM.from_pretrained(
+                llm_model_spec,
+                device_map="cuda",
+                torch_dtype="auto",
+                trust_remote_code=True,
+            )
+        else:
+            model = KBLaMPhi3ForCausalLM.from_pretrained(
+                llm_model_spec,
+                device_map="cuda",
+                torch_dtype="auto",
+                trust_remote_code=True,
+            )
+
+
+    else:
+        if llm_type == "llama3":
+            model = KblamLlamaForCausalLM.from_pretrained(
+                model_path,
+                device_map="cuda",
+                torch_dtype="auto",
+                trust_remote_code=True,
+            )
+        else:
+            model = KBLaMPhi3ForCausalLM.from_pretrained(
+                model_path,
+                device_map="cuda",
+                torch_dtype="auto",
+                trust_remote_code=True,
+            )
+
+    model.eval()
+
+    for param in model.parameters():
+        param.requires_grad = False
+
+    # Set up the encoder
+    # encoder = KBEncoder(
+    #     encoder_spec=encoder_model_spec,
+    #     projector_type="linear",
+    #     out_dim=model.config.hidden_size * (model.config.num_hidden_layers // 3 + 1),
+    #     frozen_base_model=True,
+    #     projector_kwargs={"mlp_depth": 1, "mlp_hidden_dim": 512},  # Some arbitary numbers
+    # )
+
+    encoder = KBEncoder(
+        encoder_name="OAI",
+        projector_type="linear",
+        endpoint_url="",
+        out_dim=model.config.hidden_size  # type: ignore
+        * (model.config.num_hidden_layers // actual_kb_token_layer_frequency + 1),  # type: ignore
+        frozen_base_model=True,
+        device=torch.device("cuda"),
+    )
+    encoder.load_state_dict(torch.load(encoder_path))
+
+
+    kb_retriever = KBRetriever(
+        encoder,
+        dataset,
+        key_embds=key_embds,
+        value_embds=value_embds,
+    )
+    # ckpt_name_prefix = f"stage1_{change_point}__"
+    # if lr is not None:
+    #     ckpt_name_prefix = ckpt_name_prefix + f"lr_{lr}"
+    # if not duplicate_true_kb:
+    #     ckpt_name_prefix += "NoDuplicate"
+    # if kb_size is not None:
+    #     ckpt_name_prefix += f"KBSize{kb_size}"
+    # if sep_query_head:
+    #     ckpt_name_prefix += "SepQueryHead"
+    # if use_data_aug:
+    #     ckpt_name_prefix += "UseDataAug"
+    # if fine_tune_query:
+    #     ckpt_name_prefix += "FineTuneQuery"
+    # encoder_ckpt_name = f"{ckpt_name_prefix}KeyFrom{key_embd_src}_{train_dataset_name}_{encoder_model_spec}_step_{ckpt_idx}"
+    # encoder_ckpt_name = os.path.join(ckpt_dir, encoder_ckpt_name)
+    # encoder.load_state_dict(torch.load(encoder_ckpt_name))
+
+    # dataset = json.load(open(os.path.join(dataset_dir, f"{test_dataset_name}.json")))[
+    #     120000:
+    # ]
+
+    if use_precomputed_embd:
+        assert len(dataset) == len(key_embds)
+
+    no_kb_predictions = []
+    predictions = []
+    answer = []
+
+    kb_config = KBLaMConfig(
+        sep_query_head=True,
+        kb_layer_frequency=kb_layer_frequency,
+        kb_scale_factor=kb_scale_factor,
+    )
+
+    for _ in range(sample_size):
+        print("******")
+        dataset_subset_idx = np.random.choice(len(dataset), subset_size, replace=False)
+        # dataset_subset_idx = np.random.choice(np.arange(100000, len(dataset)), subset_size, replace=False)
+        dataset_subset = [dataset[i] for i in dataset_subset_idx]
+        encoder.eval()
+        with torch.autograd.no_grad():
+            random_index = np.random.choice(len(dataset), subset_size, replace=False)
+            kb_embedding_random = kb_retriever.get_key_embeddings(random_index)
+            kb_embedding_real = kb_retriever.get_key_embeddings(dataset_subset_idx)
+           
+            kb_embedding_key, kb_embedding_val = kb_embedding_real
+          
+            kb_embedding_real = (kb_embedding_key, kb_embedding_val)
+          
+
+        N = subset_size
+        format_func_map = {"llama3": _format_Q_llama, "phi3": _format_Q_phi3}
+
+      
+
+        input_strs = [format_func_map[llm_type](dataset_subset[i]["Q"]) for i in range(subset_size)]
+
+        tokenizer_output = tokenizer(input_strs, return_tensors="pt", padding=True).to(
+            "cuda"
+        )
+        input_ids, attention_masks = (
+            tokenizer_output["input_ids"],
+            tokenizer_output["attention_mask"],
+        )
+        kb_embedding_real = (kb_embedding_real[0], kb_embedding_real[1])
+        print(kb_embedding_real[0].shape)
+        with torch.autograd.no_grad():
+
+            outputs_no_kb = model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_masks,
+                labels=input_ids,
+                kb_kvs=None,
+                max_new_tokens=40,
+                tokenizer=tokenizer,
+                output_attentions=True,
+                kb_config=kb_config
+            )
+
+            outputs_true_kb = model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_masks,
+                kb_kvs=kb_embedding_real,
+                max_new_tokens=40,
+                tokenizer=tokenizer,
+                output_attentions=True,
+                kb_config=kb_config
+            )
+
+           
+        outputs_no_kb = tokenizer.batch_decode(outputs_no_kb, skip_special_tokens=False)
+        
+        outputs_true_kb = tokenizer.batch_decode(outputs_true_kb, skip_special_tokens=False)
+        print("KB:")
+        for i in range(subset_size):
+            print(
+                "{} : {}".format(
+                    dataset_subset[i]["name"], dataset_subset[i]["description"]
+                )
+            )
+       
+        for m in model_prune_format_mapping:
+            if isinstance(model, m):
+                prune_str = model_prune_format_mapping[m]
+
+        print("------------------")
+        for i in range(subset_size):
+            
+            print("True KB", prune_str(outputs_true_kb[i]))
+            print("True answer: ", dataset_subset[i]["A"])
+            no_kb_predictions.append(
+                prune_str(outputs_no_kb[i]).split(dataset_subset[i]["Q"])[1]
+            )
+            predictions.append(
+                prune_str(outputs_true_kb[i]).split(dataset_subset[i]["Q"])[1]
+            )
+            answer.append(dataset_subset[i]["A"])
+            print("--------------------")
+        print("******")
+
+
+    config_str = f"{exp_config_str}__step_{ckpt_idx}__kb_{subset_size}__seed_{seed}"
+
+    rogue_score = rouge.compute(predictions=predictions, references=answer)
+    np.savez(os.path.join(attn_summary_save_dir, f"{config_str}_rouge.npy"), **rogue_score)
+
+    rogue_score_no_kb = rouge.compute(predictions=no_kb_predictions, references=answer)
+    np.savez(
+        os.path.join(attn_summary_save_dir, f"{config_str}_rouge_no_kb.npy"),
+        **rogue_score_no_kb,
+    )
+
+    # Start inspecting attention masks
+
+    ranges = [(0, 6), (6, 12), (12, 18), (18, 24), (24, 30), (30, 32)]
+
+    save_dir = output_dir
+    accs, confidences = [], []
+    for l, r in ranges:
+        weights = []
+        kb_size = subset_size
+        for idx in range(32)[l:r]:
+            if idx % 3 == 0:
+                weight = np.load(os.path.join(save_dir, f"{config_str}_{idx}.npy"))
+                weights.append(weight[..., :kb_size].reshape(kb_size, -1, kb_size))
+        # print(len(weights))
+        weights = np.stack(weights)
+        weights = weights.transpose(1, 0, 2, 3).reshape(kb_size, -1, kb_size)
+        acc = (weights.sum(1).argmax(1) == np.arange(kb_size)).mean()
+        top_5_predictions = torch.topk(torch.from_numpy(weights.sum(1)), 5, dim=1)[1]
+        top_5_acc = (
+            (top_5_predictions == torch.arange(kb_size)[:, None]).any(1).float().mean()
+        )
+        accs.append((acc, top_5_acc))
+        confidence = softmax(weights.mean(1), -1).max()
+        confidences.append(confidence)
+    np.save(os.path.join(attn_summary_save_dir, f"{config_str}_acc.npy"), np.array(accs))
+    np.save(
+        os.path.join(attn_summary_save_dir, f"{config_str}_conf.npy"), np.array(confidences)
+    )
+
+
 def main():
     args = parser.parse_args()
     print(args)
@@ -645,6 +1246,10 @@ def main():
         eval_generate()
     elif args.command == 'accuracy':
         eval_accuracy()
+    elif args.command == 'refusal':
+        eval_refusal()
+    elif args.command == 'basic':
+        basic_eval()
     else:
         raise ValueError(f"command {args.command} not recognised")
 

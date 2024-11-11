@@ -414,7 +414,6 @@ class KBLaMPhi3Attention(nn.Module):
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(value_states.dtype)
 
         # Code to save attention info
-        print(f"saving weights {not attn_weights.requires_grad} {save_attention_weights} {q_len > 1}")
         if not attn_weights.requires_grad:
             if save_attention_weights:
                 if q_len > 1:
