@@ -194,7 +194,7 @@ eval-ref-phi3-oai: ## Eval kb adapter
 
 eval-basic-phi3-oai: ## Eval kb adapter
 	python eval.py \
-				basic \
+				standard \
 				--seed 1607 \
 				--test_dataset synthetic_data \
 				--ckpt_idx 20000 \
@@ -209,6 +209,6 @@ eval-basic-phi3-oai: ## Eval kb adapter
 				--kb_token_layer_frequency ${KB_LAYER_FREQ} \
 				--llm_type "phi3" \
 				--kb_size 100 \
-				--exp_config_str "1000#bbb"
+				--exp_config_str "myconfig"
 
 .PHONY: train train-oai
