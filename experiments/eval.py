@@ -5,8 +5,9 @@ import argparse
 import json
 import os
 import re
+import shutil
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import evaluate
 import nltk
@@ -22,6 +23,9 @@ from kblam.models.llama_model import KblamLlamaForCausalLM
 from kblam.models.phi3_model import KBLaMPhi3ForCausalLM
 from kblam.utils.data_utils import aug_row, generate_multi_entity_qa
 from kblam.utils.train_utils import get_kb_embd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
 
 nltk.download('wordnet')
 logging.set_verbosity_warning()
@@ -106,13 +110,13 @@ def answer_question(
         if kb_scale_factor == -1:
             kb_scale_factor = None
 
-        kb_config = KBLaMConfig(
-            sep_query_head=True,
-            kb_scale_factor=kb_scale_factor,
-            top_k_kb=topk_size,
-            dynamic_sparsify=dynamic_sparsify,
-            kb_layer_frequency=kb_layer_frequency,
-        )
+        # kb_config = KBLaMConfig(
+        #     sep_query_head=True,
+        #     kb_scale_factor=kb_scale_factor,
+        #     top_k_kb=topk_size,
+        #     dynamic_sparsify=dynamic_sparsify,
+        #     kb_layer_frequency=kb_layer_frequency,
+        # )
 
         outputs = model.generate(
             input_ids=input_ids,
@@ -120,8 +124,7 @@ def answer_question(
             kb_kvs=kb,
             max_new_tokens=150,
             tokenizer=tokenizer,
-            output_attentions=True,
-            kb_config=kb_config,
+            output_attentions=True
         ).squeeze()
     outputs = tokenizer.decode(outputs, skip_special_tokens=False)
 
@@ -433,8 +436,9 @@ gen_parser.add_argument(
     '--use_precomputed_embd', action='store_true', default=False, help='Use pre-computed embeddings'
 )
 
-# Create the parser for the generation command
+# Create the parser for the accuracy command
 acc_parser = subparsers.add_parser('accuracy', parents=[parent_parser], help='Evaluate accuracy')
+acc_parser.add_argument('--query_head_path', type=str, default="", help='Path to load KB head from')
 acc_parser.add_argument('--attn_save_dir', type=str, default="", help='Directory to save attention masks')
 acc_parser.add_argument(
     '--exp_config_name', type=str, default="accuracy_results", help='Name of the experiment configuration'
@@ -447,6 +451,10 @@ acc_parser.add_argument('--test_batch_size', type=int, default=50, help='Batch s
 acc_parser.add_argument(
     '--use_shift_match', action=argparse.BooleanOptionalAction, default=False, help='Enable shift matching'
 )
+
+# Create the parser for the accuracy eval
+acc_results_parser = subparsers.add_parser('acc_results', parents=[acc_parser], help='run accuracy eval', add_help=False)
+
 
 # Create the parser for the refusal command
 ref_parser = subparsers.add_parser('refusal', parents=[parent_parser], help='Evaluate refusal')
@@ -533,6 +541,7 @@ def eval_generate():
     seed = args.seed
     test_dataset = args.test_dataset
     use_precomputed_embd = args.use_precomputed_embd
+    query_head_path = ""
 
     validation_part_start_idx = 120000 if 'gpt' in test_dataset else 0
 
@@ -550,37 +559,16 @@ def eval_generate():
 
     kb_layer_frequency = kb_layer_frequency
 
-    tokenizer = AutoTokenizer.from_pretrained(llm_base_dir, trust_remote_code=True, padding_side='left')
-    tokenizer.pad_token = '^'
-
-    if llm_type == "llama3":
-        model = KblamLlamaForCausalLM.from_pretrained(
-            model_path,
-            device_map="cuda",
-            torch_dtype="auto",
-            trust_remote_code=True,
-        )
-    else:
-        model = KBLaMPhi3ForCausalLM.from_pretrained(
-            model_path,
-            device_map="cuda",
-            torch_dtype="auto",
-            trust_remote_code=True,
-        )
-
-    model.generation_config.pad_token_id = tokenizer.pad_token_id
-    model.eval()
-
-    encoder = KBEncoder(
-        encoder_name=encoder_model_spec.upper(),
-        projector_type="linear",
-        endpoint_url="",
-        out_dim=model.config.hidden_size  # type: ignore
-        * (model.config.num_hidden_layers // actual_kb_token_layer_frequency + 1),  # type: ignore
-        frozen_base_model=True,
-        device=torch.device("cuda"),
+    tokenizer, encoder, model = _prepare_models(
+        encoder_model_spec,
+        encoder_path,
+        llm_type,
+        llm_base_dir,
+        model_path,
+        query_head_path,
+        kb_layer_frequency,
+        kb_scale_factor,
     )
-    encoder.load_state_dict(torch.load(encoder_path))
 
     kb_retriever = KBRetriever(
         encoder,
@@ -611,32 +599,106 @@ def eval_generate():
     text_file.write(gen_results)
 
 
-def eval_accuracy():
-    """Evaluate accuracy using KB"""
-    args = parser.parse_args()
+def _prepare_models(
+    encoder_spec, encoder_path, llm_type, llm_base_dir, model_path, query_head_path, kb_layer_frequency, kb_scale_factor
+):
+    tokenizer = AutoTokenizer.from_pretrained(llm_base_dir, trust_remote_code=True, padding_side="left")
+    tokenizer.pad_token = "^"
 
-    dataset_dir = args.dataset_dir
-    encoder_path = args.encoder_dir
-    encoder_spec = args.encoder_spec
-    exp_config = args.exp_config_name
-    fancy_question = args.fancy_question
-    kb_layer_frequency = args.kb_layer_frequency
-    kb_scale_factor = args.kb_scale_factor
-    kb_size = args.kb_size
-    llm_base_dir = args.llm_base_dir
-    llm_type = llm_type = args.llm_type
-    model_path = args.model_dir
-    test_batch_size = args.test_batch_size
-    test_dataset = args.test_dataset
-    use_shift_match = args.use_shift_match
+    if llm_type == "llama3":
+        if query_head_path:
+            model = KblamLlamaForCausalLM.from_pretrained(
+                model_path,
+                device_map="cuda",
+                torch_dtype="auto",
+                trust_remote_code=True,
+            )
+            model.load_query_head(query_head_path)
+        else:
+            model = KblamLlamaForCausalLM.from_pretrained(
+                model_path,
+                device_map="cuda",
+                torch_dtype="auto",
+                trust_remote_code=True,
+            )
+    else:
+        model = KBLaMPhi3ForCausalLM.from_pretrained(
+            model_path,
+            device_map="cuda",
+            torch_dtype="auto",
+            trust_remote_code=True,
+        )
+    print(model.config)
+    model.generation_config.pad_token_id = tokenizer.pad_token_id
+    model.generation_config.eos_token_id = 128009
+    model.eval()
+
+    kb_config = KBLaMConfig(
+        sep_query_head=True,
+        kb_layer_frequency=kb_layer_frequency,
+        kb_scale_factor=kb_scale_factor,
+        **model.config.to_dict(),
+    )
+    model.config = kb_config
+
+    encoder = KBEncoder(
+        encoder_name=encoder_spec.upper(),
+        projector_type="linear",
+        endpoint_url="",
+        out_dim=model.config.hidden_size * (model.config.num_hidden_layers // kb_layer_frequency + 1),
+        frozen_base_model=True,
+        projector_kwargs={"mlp_depth": 1, "mlp_hidden_dim": 512},
+        device=torch.device("cuda"),
+    )
+
+    encoder.load_state_dict(torch.load(encoder_path))
+    return tokenizer, encoder, model
+
+
+
+def create_normalized_heatmap(data, output_file='heatmap.png', figsize=(10, 8)):
+    # Normalize data to 0-1 range
+    normalized_data = (data - np.min(data)) / (np.max(data) - np.min(data))
+    
+    # Create heatmap
+    plt.figure(figsize=figsize)
+    sns.heatmap(normalized_data, 
+                cmap='YlOrRd',
+                cbar_kws={'label': 'Normalized Value'},
+                xticklabels=True,
+                yticklabels=True)
+    
+    plt.tight_layout()
+    plt.savefig(output_file, dpi=300, bbox_inches='tight')
+    plt.close()
+
+def eval_accuracy(
+    tokenizer,
+    encoder,
+    model,
+    dataset_dir: str,
+    encoder_spec,
+    exp_config,
+    fancy_question,
+    kb_layer_frequency,
+    kb_scale_factor,
+    kb_size,
+    llm_type,
+    test_batch_size,
+    test_dataset,
+    use_shift_match,
+    save_dir,
+    attn_save_dir,
+):
+    """Evaluate accuracy using KB"""
 
     if kb_scale_factor == -1:
         kb_scale_factor = None
 
     validation_part_start_idx = 120000 if "gpt" in test_dataset else 0
+    encoder_model_spec = encoder_spec
 
     dataset = json.load(open(os.path.join(dataset_dir, test_dataset) + ".json"))[validation_part_start_idx:]
-    encoder_model_spec = encoder_spec
 
     sm_string = "" if not use_shift_match else "_sm"
 
@@ -650,42 +712,17 @@ def eval_accuracy():
     if kb_layer_frequency == -1:
         kb_layer_frequency = 3
 
-    tokenizer = AutoTokenizer.from_pretrained(llm_base_dir, trust_remote_code=True, padding_side="left")
-    tokenizer.pad_token = "^"
-
-    if llm_type == "llama3":
-        model = KblamLlamaForCausalLM.from_pretrained(
-            model_path,
-            device_map="cuda",
-            torch_dtype="auto",
-            trust_remote_code=True,
-        )
+    if kb_size == len(dataset):
+        dataset_subset_idx = range(len(dataset))
+    elif kb_size > len(dataset):
+        raise IndexError(f"The KB size {kb_size} is greater than the dataset size {len(dataset)}")
     else:
-        model = KBLaMPhi3ForCausalLM.from_pretrained(
-            model_path,
-            device_map="cuda",
-            torch_dtype="auto",
-            trust_remote_code=True,
-        )
+        dataset_subset_idx = np.random.choice(len(dataset), kb_size, replace=False)
 
-    model.generation_config.pad_token_id = tokenizer.pad_token_id
-    model.generation_config.eos_token_id = 128009
-    model.eval()
-    encoder = KBEncoder(
-        encoder_name=encoder_spec.upper(),
-        projector_type="linear",
-        endpoint_url="",
-        out_dim=model.config.hidden_size * (model.config.num_hidden_layers // kb_layer_frequency + 1),
-        frozen_base_model=True,
-        projector_kwargs={"mlp_depth": 1, "mlp_hidden_dim": 512},
-        device=torch.device("cuda"),
-    )
-
-    encoder.load_state_dict(torch.load(encoder_path))
-    dataset_subset_idx = np.random.choice(len(dataset), kb_size, replace=False)
     dataset_subset = [dataset[i] for i in dataset_subset_idx]
     encoder.eval()
     with torch.autograd.no_grad():
+        # Could also pass this in but I can't be bothered for now
         kb_embedding_real = get_kb_embd(encoder, dataset_subset_idx, precomputed_embd=(key_embds, value_embds))
         kb_embedding_key, kb_embedding_val = kb_embedding_real
         kb_embedding_real = (kb_embedding_key, kb_embedding_val)
@@ -705,41 +742,204 @@ def eval_accuracy():
     )
     kb_embedding_real = (kb_embedding_real[0], kb_embedding_real[1])
 
-    kb_config = KBLaMConfig(
-        sep_query_head=True,
-        kb_layer_frequency=kb_layer_frequency,
-        kb_scale_factor=kb_scale_factor,
-    )
-
     with torch.autograd.no_grad():
-        _ = model.generate(
+        outputs = model.generate(
             input_ids=input_ids,
             attention_mask=attention_masks,
             kb_kvs=kb_embedding_real,
             max_new_tokens=60,
             tokenizer=tokenizer,
             output_attentions=True,
-            kb_config=kb_config,
             save_attention_weights=True,
-            attention_save_loc=args.attn_save_dir,
+            attention_save_loc=attn_save_dir,
             attention_file_base_name=exp_config,
         )
+        outputs = tokenizer.batch_decode(outputs.squeeze(), skip_special_tokens=False)
 
-    save_dir = args.log_save_dir
-    accs = []
-    for idx in range(0, 32, kb_layer_frequency):
-        weight = np.load(os.path.join(args.attn_save_dir, f"{exp_config}_{idx}.npy"))[..., :kb_size]
-        label = np.arange(test_batch_size)
-        weight = weight.reshape(test_batch_size, -1, kb_size)
-        acc = (weight.sum(1).argmax(1) == label).mean()
-        top_5_predictions = torch.topk(torch.from_numpy(weight.sum(1)), 5, dim=1)[1]
-        top_5_acc = (top_5_predictions.numpy() == label[:, None]).any(1).mean()
-        accs.append((acc, top_5_acc))
     save_path = Path(save_dir)
     save_path.mkdir(exist_ok=True, parents=True)
 
-    np.save(save_path / f"{exp_config}_acc.npy", np.array(accs))
+    with open(save_path / f"{exp_config}_acc.txt", "w+") as text_file:
+        for output in outputs:
+            output_string = output.strip("^")
+            text_file.write(f"{str(output_string)}\n")
 
+    accs = []
+    with torch.autograd.no_grad():
+        # for idx in range(0, 32, kb_layer_frequency):
+        idx=15
+        weight = np.load(os.path.join(attn_save_dir, f"{exp_config}_{idx}.npy"))
+        weight = weight[..., :kb_size]
+        label = np.arange(test_batch_size)
+        weight = weight.reshape(test_batch_size, -1, kb_size)
+        # if idx==15:
+        #     create_normalized_heatmap(weight.sum(1)[:, :weight.shape[0]], output_file=f'heatmap{kb_size}.png', figsize=(10, 8))
+        acc = (weight.sum(1).argmax(1) == label).mean()
+        top_5_predictions = torch.topk(torch.from_numpy(weight.sum(1)), 5, dim=1)[1]
+        top_5_acc = (top_5_predictions.numpy() == label[:, None]).any(1).mean()
+        # accs.append((acc, top_5_acc))
+        if idx==15:
+            print(f"ACC & TOP 5 ACC: {idx} {(acc, top_5_acc)}")
+            print(f"min: {np.min(weight)}  max: {np.max(weight)}")
+        accs.append({
+            "idx":idx,
+            "acc":float(acc),
+            "top5acc":float(top_5_acc),
+        })
+
+    # np.save(save_path / f"{exp_config}_acc.npy", np.array([(a["acc"],a["top5acc"])for a in accs]))
+    
+    return accs
+
+
+def eval_accuracy_cli():
+    """Evaluate accuracy using KB"""
+    args = parser.parse_args()
+
+    dataset_dir = args.dataset_dir
+    encoder_path = args.encoder_dir
+    encoder_spec = args.encoder_spec
+    exp_config = args.exp_config_name
+    fancy_question = args.fancy_question
+    kb_layer_frequency = args.kb_layer_frequency
+    kb_scale_factor = args.kb_scale_factor
+    kb_size = args.kb_size
+    llm_base_dir = args.llm_base_dir
+    llm_type = llm_type = args.llm_type
+    model_path = args.model_dir
+    test_batch_size = args.test_batch_size
+    test_dataset = args.test_dataset
+    use_shift_match = args.use_shift_match
+
+    query_head_path = args.query_head_path
+    tokenizer, encoder, model = _prepare_models(
+        encoder_spec,
+        encoder_path,
+        llm_type,
+        llm_base_dir,
+        model_path,
+        query_head_path,
+        kb_layer_frequency,
+        kb_scale_factor,
+    )
+
+    eval_accuracy(
+        tokenizer,
+        encoder,
+        model,
+        dataset_dir,
+        encoder_spec,
+        exp_config,
+        fancy_question,
+        kb_layer_frequency,
+        kb_scale_factor,
+        kb_size,
+        llm_type,
+        test_batch_size,
+        test_dataset,
+        use_shift_match,
+        args.log_save_dir,
+        args.attn_save_dir,
+    )
+
+
+def write_to_json(
+    data: Any,
+    filepath: str,
+    indent: int = 4,
+    encoding: str = 'utf-8'
+) -> bool:
+    """
+    Write a dictionary to a JSON file with error handling and formatting options.
+    
+    Args:
+        data: Dictionary to write to JSON file
+        filepath: Path where the JSON file should be saved
+        indent: Number of spaces for indentation (default: 4)
+        encoding: File encoding (default: 'utf-8')
+    
+    Raises:
+        TypeError: If data is not a dictionary
+    """
+    
+    try:
+        # Convert string path to Path object
+        file_path = Path(filepath)
+        
+        # Write the JSON file
+        with open(file_path, 'w', encoding=encoding) as f:
+            json.dump(
+                data,
+                f,
+                indent=indent,
+                sort_keys=True,  # For consistent output
+                default=str      # Handle non-serializable objects by converting to string
+            )
+        
+    except Exception as e:
+        print(f"Error writing JSON file: {str(e)}")
+    
+
+def run_accuracy_evalution():
+    args = parser.parse_args()
+
+    dataset_dir = args.dataset_dir
+    encoder_path = args.encoder_dir
+    encoder_spec = args.encoder_spec
+    exp_config = args.exp_config_name
+    fancy_question = args.fancy_question
+    kb_layer_frequency = args.kb_layer_frequency
+    kb_scale_factor = args.kb_scale_factor
+    llm_base_dir = args.llm_base_dir
+    llm_type = llm_type = args.llm_type
+    model_path = args.model_dir
+    test_dataset = args.test_dataset
+    use_shift_match = args.use_shift_match
+
+    query_head_path = args.query_head_path
+
+    tokenizer, encoder, model = _prepare_models(
+        encoder_spec,
+        encoder_path,
+        llm_type,
+        llm_base_dir,
+        model_path,
+        query_head_path,
+        kb_layer_frequency,
+        kb_scale_factor,
+    )
+
+    xs = [50, 100, 200, 400, 800, 1600, 3200, 6400]
+    accuracy_results = []
+    for x in xs:
+        print(f"kb_size {x}")
+        # for trial in range(5):
+        accs = eval_accuracy(
+            tokenizer,
+            encoder,
+            model,
+            dataset_dir,
+            encoder_spec,
+            exp_config,
+            fancy_question,
+            kb_layer_frequency,
+            kb_scale_factor,
+            x,
+            llm_type,
+            min(x, 200),
+            test_dataset,
+            use_shift_match,
+            args.log_save_dir,
+            args.attn_save_dir,
+        )
+        shutil.rmtree(args.attn_save_dir)
+        os.mkdir(args.attn_save_dir)
+        accuracy_results.append({
+            "kb_size":x,
+            "accuracy_results":accs
+        })
+    write_to_json(accuracy_results, os.path.join(args.log_save_dir, "accuracy_results.json"))
+                
 
 def eval_refusal():
     "Evaluate refusal to answer questions the KB is not relevant for"
@@ -758,7 +958,7 @@ def eval_refusal():
     seed = args.seed
     test_dataset = args.test_dataset
     use_precomputed_embd = args.use_precomputed_embd
-
+    query_head_path = ""
     validation_part_start_idx = 120000 if "gpt" in test_dataset else 0
 
     dataset = json.load(open(os.path.join(dataset_dir, test_dataset + ".json")))[validation_part_start_idx:]
@@ -771,39 +971,51 @@ def eval_refusal():
             "float32"
         )[validation_part_start_idx:]
 
-    encoder_spec = encoder_model_spec
-    tokenizer = AutoTokenizer.from_pretrained(llm_base_dir, trust_remote_code=True, padding_side="left")
-    tokenizer.pad_token = "^"
 
-    if llm_type == "llama3":
-        model = KblamLlamaForCausalLM.from_pretrained(
-            model_path,
-            device_map="cuda",
-            torch_dtype="auto",
-            trust_remote_code=True,
-        )
-    else:
-        model = KBLaMPhi3ForCausalLM.from_pretrained(
-            model_path,
-            device_map="cuda",
-            torch_dtype="auto",
-            trust_remote_code=True,
-        )
-
-    model.generation_config.pad_token_id = tokenizer.pad_token_id
-    model.generation_config.eos_token_id = 128009
-    model.eval()
-
-    encoder = KBEncoder(
-        encoder_name=encoder_spec.upper(),
-        projector_type="linear",
-        endpoint_url="",
-        out_dim=model.config.hidden_size * (model.config.num_hidden_layers // kb_layer_frequency + 1),
-        frozen_base_model=True,
-        projector_kwargs={"mlp_depth": 1, "mlp_hidden_dim": 512},  # Some arbitary numbers,
-        get_oai_embd_online=False if args.use_precomputed_embd else True,
+    tokenizer, encoder, model = _prepare_models(
+        encoder_model_spec,
+        encoder_path,
+        llm_type,
+        llm_base_dir,
+        model_path,
+        query_head_path,
+        kb_layer_frequency,
+        kb_scale_factor,
     )
-    encoder.load_state_dict(torch.load(encoder_path))
+
+    # encoder_spec = encoder_model_spec
+    # tokenizer = AutoTokenizer.from_pretrained(llm_base_dir, trust_remote_code=True, padding_side="left")
+    # tokenizer.pad_token = "^"
+
+    # if llm_type == "llama3":
+    #     model = KblamLlamaForCausalLM.from_pretrained(
+    #         model_path,
+    #         device_map="cuda",
+    #         torch_dtype="auto",
+    #         trust_remote_code=True,
+    #     )
+    # else:
+    #     model = KBLaMPhi3ForCausalLM.from_pretrained(
+    #         model_path,
+    #         device_map="cuda",
+    #         torch_dtype="auto",
+    #         trust_remote_code=True,
+    #     )
+
+    # model.generation_config.pad_token_id = tokenizer.pad_token_id
+    # model.generation_config.eos_token_id = 128009
+    # model.eval()
+
+    # encoder = KBEncoder(
+    #     encoder_name=encoder_spec.upper(),
+    #     projector_type="linear",
+    #     endpoint_url="",
+    #     out_dim=model.config.hidden_size * (model.config.num_hidden_layers // kb_layer_frequency + 1),
+    #     frozen_base_model=True,
+    #     projector_kwargs={"mlp_depth": 1, "mlp_hidden_dim": 512},  # Some arbitary numbers,
+    #     get_oai_embd_online=False if args.use_precomputed_embd else True,
+    # )
+    # encoder.load_state_dict(torch.load(encoder_path))
 
     kb_retriever = KBRetriever(
         encoder,
@@ -850,7 +1062,7 @@ def eval():
     subset_size = args.subset_size
     test_dataset = args.test_dataset
     use_precomputed_embd = args.use_precomputed_embd
-
+    query_head_path = ""
     sep_query_head = True
     actual_kb_token_layer_frequency = 3
 
@@ -878,42 +1090,54 @@ def eval():
     os.environ["EVAL_MODE"] = "1"
 
     llm_model_spec = llm_base_dir
-    tokenizer = AutoTokenizer.from_pretrained(llm_model_spec, trust_remote_code=True, padding_side="left")
-    tokenizer.pad_token_id = 128001
-    tokenizer.pad_token = '^'
-    if model_path:  # TODO: make it load the default llm checkpoint
-        if llm_type == "llama3":
-            model = KblamLlamaForCausalLM.from_pretrained(
-                llm_model_spec,
-                device_map="cuda",
-                torch_dtype="auto",
-                trust_remote_code=True,
-            )
-        else:
-            model = KBLaMPhi3ForCausalLM.from_pretrained(
-                llm_model_spec,
-                device_map="cuda",
-                torch_dtype="auto",
-                trust_remote_code=True,
-            )
 
-    else:
-        if llm_type == "llama3":
-            model = KblamLlamaForCausalLM.from_pretrained(
-                model_path,
-                device_map="cuda",
-                torch_dtype="auto",
-                trust_remote_code=True,
-            )
-        else:
-            model = KBLaMPhi3ForCausalLM.from_pretrained(
-                model_path,
-                device_map="cuda",
-                torch_dtype="auto",
-                trust_remote_code=True,
-            )
+    tokenizer, encoder, model = _prepare_models(
+        encoder_model_spec,
+        encoder_path,
+        llm_type,
+        llm_base_dir,
+        model_path,
+        query_head_path,
+        kb_layer_frequency,
+        kb_scale_factor,
+    )
 
-    model.eval()
+    # tokenizer = AutoTokenizer.from_pretrained(llm_model_spec, trust_remote_code=True, padding_side="left")
+    # tokenizer.pad_token_id = 128001
+    # tokenizer.pad_token = '^'
+    # if model_path:  # TODO: make it load the default llm checkpoint
+    #     if llm_type == "llama3":
+    #         model = KblamLlamaForCausalLM.from_pretrained(
+    #             llm_model_spec,
+    #             device_map="cuda",
+    #             torch_dtype="auto",
+    #             trust_remote_code=True,
+    #         )
+    #     else:
+    #         model = KBLaMPhi3ForCausalLM.from_pretrained(
+    #             llm_model_spec,
+    #             device_map="cuda",
+    #             torch_dtype="auto",
+    #             trust_remote_code=True,
+    #         )
+
+    # else:
+    #     if llm_type == "llama3":
+    #         model = KblamLlamaForCausalLM.from_pretrained(
+    #             model_path,
+    #             device_map="cuda",
+    #             torch_dtype="auto",
+    #             trust_remote_code=True,
+    #         )
+    #     else:
+    #         model = KBLaMPhi3ForCausalLM.from_pretrained(
+    #             model_path,
+    #             device_map="cuda",
+    #             torch_dtype="auto",
+    #             trust_remote_code=True,
+    #         )
+
+    # model.eval()
 
     for param in model.parameters():
         param.requires_grad = False
@@ -1060,7 +1284,9 @@ def main():
     if args.command == 'generation':
         eval_generate()
     elif args.command == 'accuracy':
-        eval_accuracy()
+        eval_accuracy_cli()
+    elif args.command == 'acc_results':
+        run_accuracy_evalution()
     elif args.command == 'refusal':
         eval_refusal()
     elif args.command == 'standard':

@@ -22,7 +22,7 @@ export PRINT_HELP_PYSCRIPT # End of python section
 
 
 LLAMA_BASE_DIR='/home/t-wangx/llama_weights/llama3_8b_ins'
-LLAMA_HF='/datadisk/data/gcrbackup/hf_models/Meta-Llama-3-8B'
+LLAMA_HF='/kblam_llama_unified/kblam_unified'
 PHI3_HF='/datadisk/data/gcrbackup/hf_models/phi3'
 DATASET_DIR='/datadisk/data/gcrbackup/oai_embd'
 CKPT_SAVE_DIR='/home/msalvaris/data/experiments/kblam/exp_v0.2'
@@ -172,6 +172,47 @@ eval-acc-phi3-oai: ## Eval kb adapter
 		--llm_type "phi3" \
 		--attn_save_dir "/datadisk/kblam_attention" \
 		--log_save_dir "/datadisk/kblam_attention/acc_results" 
+
+
+eval-acc-eval-phi3-oai: ## Eval kb adapter
+	python eval.py acc_results \
+		--seed 1607 \
+		--dataset_dir ${DATASET_DIR} \
+		--test_dataset synthetic_data \
+		--llm_base_dir ${PHI3_HF} \
+		--model_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugKeyFromkey_OAI_synthetic_data_phi3_step_20000' \
+		--encoder_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugFineTuneQueryKeyFromkey_synthetic_data_OAI_step_20000' \
+		--save_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.2_eval' \
+		--kb_layer_frequency ${KB_LAYER_FREQ} \
+		--ckpt_idx 20000 \
+		--lr 0 \
+		--kb_size 100 \
+		--no-fancy_instruction \
+		--encoder_spec oai \
+		--llm_type "phi3" \
+		--attn_save_dir "/datadisk/kblam_attention" \
+		--log_save_dir "/datadisk/kblam_attention_acc_results" 
+
+
+eval-acc-llama-oai: ## Eval kb adapter
+	python eval.py accuracy \
+		--seed 1607 \
+		--dataset_dir ${DATASET_DIR} \
+		--test_dataset synthetic_data \
+		--llm_base_dir "/datadisk/tk/llama3_8b_ins" \
+		--model_dir "/datadisk/tk/llama3_8b_ins" \
+		--encoder_dir "/datadisk/tk/encoder_ckpt_20000_OAI.pt" \
+		--save_dir "/datadisk/kblamatt2" \
+		--kb_layer_frequency ${KB_LAYER_FREQ} \
+		--ckpt_idx 20000 \
+		--lr 0 \
+		--kb_size 100 \
+		--no-fancy_instruction \
+		--encoder_spec oai \
+		--llm_type "llama3" \
+		--attn_save_dir "/datadisk/kblamatt2" \
+		--log_save_dir "/datadisk/kblamatt2/acc_results" \
+		--query_head_path "/datadisk/tk/learned_query_head_20000_OAI.pth"
 
 
 eval-ref-phi3-oai: ## Eval kb adapter

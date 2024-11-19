@@ -18,6 +18,7 @@
 import inspect
 import math
 import os
+import copy
 import warnings
 from typing import List, Optional, Tuple, Union
 
@@ -900,7 +901,6 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         kb_kvs: Optional[tuple] = None,
-        kb_config: Optional[KBLaMConfig] = None,
         save_attention_weights: bool = False,
         attention_save_loc: Optional[str] = None,
         attention_file_base_name: Optional[str] = None,
@@ -951,7 +951,7 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             kb_kvs=kb_kvs,
-            kb_config=kb_config,
+            kb_config=self.config,
             save_attention_weights=save_attention_weights,
             attention_save_loc=attention_save_loc,
             attention_file_base_name=attention_file_base_name,
@@ -994,10 +994,10 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
         attention_mask=None,
         inputs_embeds=None,
         kb_kvs: Optional[tuple] = None,
-        kb_config: Optional[KBLaMConfig] = None,
-        save_attention_weights: bool = False,
-        attention_save_loc: Optional[str] = None,
-        attention_file_base_name: Optional[str] = None,
+        # kb_config: Optional[KBLaMConfig] = None,
+        # save_attention_weights: bool = False,
+        # attention_save_loc: Optional[str] = None,
+        # attention_file_base_name: Optional[str] = None,
         **kwargs,
     ):
         if past_key_values is not None:
@@ -1038,11 +1038,17 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
                 position_ids = position_ids[:, -input_ids.shape[1] :]
 
         # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
-        if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
-        else:
-            model_inputs = {"input_ids": input_ids}
+        model_inputs = copy.copy(kwargs)
+        del model_inputs["cache_position"]
+        # print(model_inputs)
 
+        if inputs_embeds is not None and past_key_values is None:
+            # model_inputs = {"inputs_embeds": inputs_embeds}
+            model_inputs["inputs_embeds"] = inputs_embeds
+        else:
+            # model_inputs = {"input_ids": input_ids}
+            model_inputs["input_ids"] = input_ids.contiguous()
+        
         model_inputs.update(
             {
                 "position_ids": position_ids,
@@ -1050,10 +1056,10 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
                 "use_cache": kwargs.get("use_cache"),
                 "attention_mask": attention_mask,
                 "kb_kvs": kb_kvs,
-                "kb_config": kb_config,
-                "save_attention_weights": save_attention_weights,
-                "attention_save_loc": attention_save_loc,
-                "attention_file_base_name": attention_file_base_name,
+                # "kb_config": kb_config,
+                # "save_attention_weights": save_attention_weights,
+                # "attention_save_loc": attention_save_loc,
+                # "attention_file_base_name": attention_file_base_name,
 
             }
         )
