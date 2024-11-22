@@ -336,10 +336,9 @@ class KBLaMPhi3Attention(nn.Module):
         query_states_2 = self.q_proj_new(hidden_states)
 
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
+        query_states_2 = query_states_2.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-
-        query_states_2 = query_states_2.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
 
         kv_seq_len = key_states.shape[-2]
         if past_key_value is not None:
@@ -371,8 +370,8 @@ class KBLaMPhi3Attention(nn.Module):
                 kb_idx = self.layer_idx // kb_layer_frequency
                 if len(kb_keys.shape) == 2:  # Not batch dim
                     kb_len = kb_keys.shape[0]
-                    kb_keys = kb_keys.reshape(kb_len, 1 + self.config.num_hidden_layers // 3, -1)[:, kb_idx]
-                    kb_values = kb_values.reshape(kb_len, 1 + self.config.num_hidden_layers // 3, -1)[:, kb_idx]
+                    kb_keys = kb_keys.reshape(kb_len, 1 + self.config.num_hidden_layers // kb_layer_frequency, -1)[:, kb_idx]
+                    kb_values = kb_values.reshape(kb_len, 1 + self.config.num_hidden_layers // kb_layer_frequency, -1)[:, kb_idx]
                     kb_keys = kb_keys.view(kb_len, self.num_heads, self.head_dim).transpose(0, 1)
                     kb_values = kb_values.view(kb_len, self.num_heads, self.head_dim).transpose(0, 1)
                     kb_keys = kb_keys.unsqueeze(0).expand(bsz, self.num_heads, kb_len, self.head_dim)
@@ -382,8 +381,8 @@ class KBLaMPhi3Attention(nn.Module):
                     value_states = torch.concat([kb_values, value_states], dim=2)
                 elif len(kb_keys.shape) == 3:  # Has a batch dim
                     kb_len = kb_keys.shape[1]
-                    kb_keys = kb_keys.view(bsz, kb_len, 1 + self.config.num_hidden_layers // 3, -1)[:, :, kb_idx]
-                    kb_values = kb_values.view(bsz, kb_len, 1 + self.config.num_hidden_layers // 3, -1)[:, :, kb_idx]
+                    kb_keys = kb_keys.view(bsz, kb_len, 1 + self.config.num_hidden_layers // kb_layer_frequency, -1)[:, :, kb_idx]
+                    kb_values = kb_values.view(bsz, kb_len, 1 + self.config.num_hidden_layers // kb_layer_frequency, -1)[:, :, kb_idx]
                     kb_keys = kb_keys.view(bsz, kb_len, self.num_heads, self.head_dim).transpose(1, 2)
                     kb_values = kb_values.view(bsz, kb_len, self.num_heads, self.head_dim).transpose(1, 2)
                     # Append the KB keys and values in the front, in front of padding

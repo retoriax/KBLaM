@@ -25,10 +25,10 @@ LLAMA_BASE_DIR='/home/t-wangx/llama_weights/llama3_8b_ins'
 LLAMA_HF='/kblam_llama_unified/kblam_unified'
 PHI3_HF='/datadisk/data/gcrbackup/hf_models/phi3'
 DATASET_DIR='/datadisk/data/gcrbackup/oai_embd'
-CKPT_SAVE_DIR='/home/msalvaris/data/experiments/kblam/exp_v0.2'
+CKPT_SAVE_DIR='/home/msalvaris/data/experiments/kblam/exp_v0.3.2'
 LR=1e-4
 TRAIN_KB_SIZE=0 # Randomly pick KB size during training time
-OUTLIER_RATIO=1 # Ratio of no-answer question in the batch, -1 stands for no such samples
+OUTLIER_RATIO=-1 # Ratio of no-answer question in the batch, -1 stands for no such samples
 KB_LAYER_FREQ=3 # How frequent to inject kb tokens into the layers
 MULTI_ENTITIES_NUM=2 # For questions that involve multiple entities, how many entities are involved.
 
@@ -68,7 +68,7 @@ train-oai: ## Train kb adapter
 					   --dataset gpt_data \
 					   --N 120000 \
 					   --B 2 \
-					   --steps 20001 \
+					   --steps 30001 \
 					   --encoder_spec OAI \
 					   --use_cached_embd \
 					   --key_embd_src key \
@@ -96,7 +96,7 @@ train-phi3-oai: ## Train kb adapter
 					--train_dataset synthetic_data \
 					--N 120000 \
 					--B 32 \
-					--steps 20001 \
+					--steps 30001 \
 					--encoder_spec OAI \
 					--use_cached_embd \
 					--key_embd_src key \
@@ -111,7 +111,7 @@ train-phi3-oai: ## Train kb adapter
 					--multi_entities ${MULTI_ENTITIES_NUM} \
 					--use_extended_qa \
 					--outlier_ratio ${OUTLIER_RATIO} \
-					--gradient_accm_step 10 \
+					--gradient_accm_step 20 \
 					--llm_type 'phi3' \
 					--use_cuda
 
@@ -166,7 +166,8 @@ eval-acc-phi3-oai: ## Eval kb adapter
 		--kb_layer_frequency ${KB_LAYER_FREQ} \
 		--ckpt_idx 20000 \
 		--lr 0 \
-		--kb_size 100 \
+		--kb_size 3200 \
+		--kb_scale_factor 100 \
 		--no-fancy_instruction \
 		--encoder_spec oai \
 		--llm_type "phi3" \
@@ -182,11 +183,12 @@ eval-acc-eval-phi3-oai: ## Eval kb adapter
 		--llm_base_dir ${PHI3_HF} \
 		--model_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugKeyFromkey_OAI_synthetic_data_phi3_step_20000' \
 		--encoder_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugFineTuneQueryKeyFromkey_synthetic_data_OAI_step_20000' \
-		--save_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.2_eval' \
+		--save_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.3_eval' \
 		--kb_layer_frequency ${KB_LAYER_FREQ} \
 		--ckpt_idx 20000 \
 		--lr 0 \
 		--kb_size 100 \
+		--kb_scale_factor 100 \
 		--no-fancy_instruction \
 		--encoder_spec oai \
 		--llm_type "phi3" \
@@ -196,6 +198,28 @@ eval-acc-eval-phi3-oai: ## Eval kb adapter
 
 eval-acc-llama-oai: ## Eval kb adapter
 	python eval.py accuracy \
+		--seed 1607 \
+		--dataset_dir ${DATASET_DIR} \
+		--test_dataset synthetic_data \
+		--llm_base_dir "/datadisk/tk/llama3_8b_ins" \
+		--model_dir "/datadisk/tk/llama3_8b_ins" \
+		--encoder_dir "/datadisk/tk/encoder_ckpt_20000_OAI.pt" \
+		--save_dir "/datadisk/kblamatt2" \
+		--kb_layer_frequency ${KB_LAYER_FREQ} \
+		--ckpt_idx 20000 \
+		--lr 0 \
+		--kb_size 3200 \
+		--kb_scale_factor 100 \
+		--no-fancy_instruction \
+		--encoder_spec oai \
+		--llm_type "llama3" \
+		--attn_save_dir "/datadisk/kblamatt2" \
+		--log_save_dir "/datadisk/kblamatt2/acc_results" \
+		--query_head_path "/datadisk/tk/learned_query_head_20000_OAI.pth"
+
+
+eval-acc-eval-llama-oai: ## Eval kb adapter
+	python eval.py acc_results \
 		--seed 1607 \
 		--dataset_dir ${DATASET_DIR} \
 		--test_dataset synthetic_data \

@@ -110,14 +110,6 @@ def answer_question(
         if kb_scale_factor == -1:
             kb_scale_factor = None
 
-        # kb_config = KBLaMConfig(
-        #     sep_query_head=True,
-        #     kb_scale_factor=kb_scale_factor,
-        #     top_k_kb=topk_size,
-        #     dynamic_sparsify=dynamic_sparsify,
-        #     kb_layer_frequency=kb_layer_frequency,
-        # )
-
         outputs = model.generate(
             input_ids=input_ids,
             attention_mask=attention_masks,
@@ -630,16 +622,25 @@ def _prepare_models(
         )
     print(model.config)
     model.generation_config.pad_token_id = tokenizer.pad_token_id
-    model.generation_config.eos_token_id = 128009
+    model.generation_config.eos_token_id = tokenizer.eos_token_id
     model.eval()
 
+    config = model.config.to_dict()
     kb_config = KBLaMConfig(
         sep_query_head=True,
         kb_layer_frequency=kb_layer_frequency,
         kb_scale_factor=kb_scale_factor,
-        **model.config.to_dict(),
     )
-    model.config = kb_config
+    config.update(kb_config.to_dict())
+    new_config = KBLaMConfig(
+        **config
+    )
+    model.config = new_config
+    print(model.config)
+    # model.config["sep_query_head"]=True
+    # model.config["kb_layer_frequency"]=kb_layer_frequency
+    # model.config["kb_scale_factor"]=kb_scale_factor
+
 
     encoder = KBEncoder(
         encoder_name=encoder_spec.upper(),
@@ -694,6 +695,9 @@ def eval_accuracy(
 
     if kb_scale_factor == -1:
         kb_scale_factor = None
+    
+    if kb_layer_frequency == -1:
+        kb_layer_frequency = 3
 
     validation_part_start_idx = 120000 if "gpt" in test_dataset else 0
     encoder_model_spec = encoder_spec
@@ -708,9 +712,6 @@ def eval_accuracy(
     value_embds = np.load(
         os.path.join(dataset_dir, f"{test_dataset}_{encoder_model_spec}_embd_value{sm_string}.npy")
     ).astype("float32")[validation_part_start_idx:]
-
-    if kb_layer_frequency == -1:
-        kb_layer_frequency = 3
 
     if kb_size == len(dataset):
         dataset_subset_idx = range(len(dataset))
@@ -1102,43 +1103,6 @@ def eval():
         kb_scale_factor,
     )
 
-    # tokenizer = AutoTokenizer.from_pretrained(llm_model_spec, trust_remote_code=True, padding_side="left")
-    # tokenizer.pad_token_id = 128001
-    # tokenizer.pad_token = '^'
-    # if model_path:  # TODO: make it load the default llm checkpoint
-    #     if llm_type == "llama3":
-    #         model = KblamLlamaForCausalLM.from_pretrained(
-    #             llm_model_spec,
-    #             device_map="cuda",
-    #             torch_dtype="auto",
-    #             trust_remote_code=True,
-    #         )
-    #     else:
-    #         model = KBLaMPhi3ForCausalLM.from_pretrained(
-    #             llm_model_spec,
-    #             device_map="cuda",
-    #             torch_dtype="auto",
-    #             trust_remote_code=True,
-    #         )
-
-    # else:
-    #     if llm_type == "llama3":
-    #         model = KblamLlamaForCausalLM.from_pretrained(
-    #             model_path,
-    #             device_map="cuda",
-    #             torch_dtype="auto",
-    #             trust_remote_code=True,
-    #         )
-    #     else:
-    #         model = KBLaMPhi3ForCausalLM.from_pretrained(
-    #             model_path,
-    #             device_map="cuda",
-    #             torch_dtype="auto",
-    #             trust_remote_code=True,
-    #         )
-
-    # model.eval()
-
     for param in model.parameters():
         param.requires_grad = False
 
@@ -1167,12 +1131,6 @@ def eval():
     no_kb_predictions = []
     predictions = []
     answer = []
-
-    kb_config = KBLaMConfig(
-        sep_query_head=True,
-        kb_layer_frequency=kb_layer_frequency,
-        kb_scale_factor=kb_scale_factor,
-    )
 
     for _ in range(sample_size):
         print("******")
@@ -1205,7 +1163,6 @@ def eval():
                 max_new_tokens=40,
                 tokenizer=tokenizer,
                 output_attentions=True,
-                kb_config=kb_config,
             )
 
             outputs_true_kb = model.generate(
@@ -1215,7 +1172,6 @@ def eval():
                 max_new_tokens=40,
                 tokenizer=tokenizer,
                 output_attentions=True,
-                kb_config=kb_config,
             )
 
         outputs_no_kb = tokenizer.batch_decode(outputs_no_kb, skip_special_tokens=False)

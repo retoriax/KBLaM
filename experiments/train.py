@@ -20,8 +20,9 @@ from torch.optim.optimizer import ParamsT
 from transformers import AutoTokenizer
 
 from kblam.kb_encoder import KBEncoder
-from kblam.models.llama_model import KblamForCausalLM
-from kblam.models.phi3_model import KbphiForCausalLM
+from kblam.models.kblam_config import KBLaMConfig
+from kblam.models.llama_model import KblamLlamaForCausalLM
+from kblam.models.phi3_model import KBLaMPhi3ForCausalLM
 from kblam.utils.data_utils import aug_row, generate_multi_entity_qa, get_i_dont_know_ans
 from kblam.utils.train_utils import get_kb_embd
 
@@ -63,7 +64,7 @@ parser.add_argument("--tune_llm_q", action=argparse.BooleanOptionalAction, help=
 parser.add_argument("--sep_query_head", action=argparse.BooleanOptionalAction, help="Fine tune the query head")
 parser.add_argument("--use_oai_embd", action="store_true", help="Use OpenAI embedding")
 parser.add_argument("--use_cached_embd", action="store_true", help="Choose to use pre-computed KV embeddings")
-parser.add_argument("--epoch", type=int, default=300, help="Total epochs")
+parser.add_argument("--steps", type=int, default=300, help="Total number of steps")
 parser.add_argument("--encoder_spec", type=str, default="OAI")
 parser.add_argument("--key_embd_src", type=str, default="key", choices=["key", "answer", "questions", None], help="Source of key embedding")
 parser.add_argument("--use_data_aug", action="store_true", help="Randomly pick templates for the question")
@@ -200,6 +201,7 @@ def get_batch(
     labels = []
     if multi_entities is not None:
         assert not include_outlier
+
     if random_sample:
         if multi_entities is not None:
             batch_indices = np.random.choice(len(dataset), (B, multi_entities), replace=False)
@@ -211,6 +213,7 @@ def get_batch(
     def get_question_and_answer(idx):
         if use_extended_qa:
             Q, A = dataset[idx]["extended_Q"], dataset[idx]["extended_A"]
+
         elif multi_entities is not None:
             Q, A = generate_multi_entity_qa(
                 [dataset[i]["name"] for i in idx],
@@ -309,15 +312,14 @@ def _load_cached_embeddigns(encoder_model_spec: str, dataset_dir: str, dataset_n
         ).astype("float32")
     return key_embds, value_embds
 
-
-def context_set_size_scheduler(epoch: int, kb_size: str | int):
-    if kb_size is not None:
-        if kb_size == "dynamic":
-            return np.random.randint(4, 100)
-        return kb_size
-    round = (epoch) // 100
-    return 4 * (round + 1)
-
+def context_set_size_scheduler(epoch: int, kb_size: str | int) -> int:
+    """Determines the KB size for the current training step """
+    if kb_size == "dynamic":
+        return np.random.randint(10, 200)
+    if not kb_size:
+        round = (epoch) // 100
+        return 4 * (round + 1)
+    return kb_size
 
 def get_step_config(
     current_accum_step: int,
@@ -367,7 +369,7 @@ def _get_parameter_count(encoder):
 
 
 def _get_phi3_query_head_parameters(
-    model: KblamForCausalLM | KbphiForCausalLM,
+    model: KblamLlamaForCausalLM | KBLaMPhi3ForCausalLM,
     sep_query_head: bool,
     actual_kb_token_layer_frequency: int,
 ):
@@ -395,7 +397,7 @@ def _get_phi3_query_head_parameters(
 
 
 def _get_llama3_query_head_parameters(
-    model: KblamForCausalLM | KbphiForCausalLM,
+    model: KblamLlamaForCausalLM | KBLaMPhi3ForCausalLM,
     sep_query_head: bool,
     actual_kb_token_layer_frequency: int,
 ):
@@ -488,7 +490,7 @@ def _setup_scheduler_and_optimizer(model_parapmeters: ParamsT, lr: float, max_it
 class Trainer:
     def __init__(
         self,
-        llm_model: KbphiForCausalLM | KblamForCausalLM,
+        llm_model: KBLaMPhi3ForCausalLM | KblamLlamaForCausalLM,
         kbretriever: KBRetriever,
         tokenizer: transformers.PreTrainedTokenizer,
         actual_kb_token_layer_frequency: int,
@@ -519,10 +521,10 @@ class Trainer:
         self.encoder_savename = encoder_savename
         self.output_path = pathlib.Path(output_dir)
 
-        if isinstance(llm_model, KbphiForCausalLM):  # Phi3
+        if isinstance(llm_model, KBLaMPhi3ForCausalLM):  # Phi3
             self._get_batch = partial(get_batch, _format_QA_phi3, _create_labels_for_phi3)
             self._get_params = _get_phi3_query_head_parameters
-        elif isinstance(llm_model, KblamForCausalLM):  # llama
+        elif isinstance(llm_model, KblamLlamaForCausalLM):  # llama
             self._get_batch = partial(get_batch, _format_QA_llama, _create_labels_for_llama)
             self._get_params = _get_llama3_query_head_parameters
         else:
@@ -561,6 +563,14 @@ class Trainer:
     ):
         train_losses = []
         start_epoch = 0
+
+        kb_config = KBLaMConfig(
+            sep_query_head=self.sep_query_head,
+            kb_layer_frequency=self.actual_kb_token_layer_frequency,
+            **self.model.config.to_dict(),
+        )
+        self.model.config = kb_config
+
         with create_custom_progress_bar(console=console) as pbar:
             task = pbar.add_task("Training", total=self.num_epochs, loss=100)
             for epoch in range(start_epoch, self.num_epochs, 1):
@@ -590,13 +600,8 @@ class Trainer:
                     out = self.model(
                         input_ids=input_ids,
                         attention_mask=attention_masks,
-                        kb_kv=kb_embedding,
+                        kb_kvs=kb_embedding,
                         output_attentions=True,
-                        kb_config={
-                            "sep_query_head": self.sep_query_head,
-                            "eval_mode": False,
-                            "kb_layer_frequency": self.actual_kb_token_layer_frequency,
-                        },
                     )
                     logits = out["logits"]
 
@@ -664,7 +669,7 @@ def main():
     seed = args.seed
     N = args.N
     B = args.B
-    epoch = args.epoch
+    epoch = args.steps
 
     encoder_spec = args.encoder_spec
     load_epoch = args.load_epoch
@@ -757,7 +762,7 @@ def main():
     tokenizer.pad_token = tokenizer.eos_token
 
     if args.llm_type == "llama3":
-        model = KblamForCausalLM.from_pretrained(
+        model = KblamLlamaForCausalLM.from_pretrained(
             llm_model_spec,
             device_map=device,
             torch_dtype=torch.bfloat16,
@@ -765,7 +770,7 @@ def main():
             use_auth_token=hf_token,
         )
     elif args.llm_type == "phi3":
-        model = KbphiForCausalLM.from_pretrained(
+        model = KBLaMPhi3ForCausalLM.from_pretrained(
             llm_model_spec,
             device_map=device,
             torch_dtype="auto",
@@ -838,7 +843,7 @@ def main():
         use_data_aug=use_data_aug,
         multi_entities=multi_entities,
         use_extended_qa=use_extended_qa,
-        save_period=100,
+        save_period=2000,
         fine_tune_llm_q=fine_tune_llm_q,
     )
 
