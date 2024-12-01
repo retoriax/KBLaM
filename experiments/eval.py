@@ -19,11 +19,10 @@ from transformers import AutoTokenizer, logging
 
 from kblam.kb_encoder import KBEncoder
 from kblam.models.kblam_config import KBLaMConfig
-from kblam.models.llama_model import KblamLlamaForCausalLM
+from kblam.models.llama3_2_model import KblamLlamaForCausalLM
 from kblam.models.phi3_model import KBLaMPhi3ForCausalLM
 from kblam.utils.data_utils import aug_row, generate_multi_entity_qa
 from kblam.utils.train_utils import get_kb_embd
-
 
 nltk.download('wordnet')
 logging.set_verbosity_warning()
@@ -110,7 +109,7 @@ def answer_question(
             kb_kvs=kb,
             max_new_tokens=150,
             tokenizer=tokenizer,
-            output_attentions=True
+            output_attentions=True,
         ).squeeze()
     outputs = tokenizer.decode(outputs, skip_special_tokens=False)
 
@@ -125,21 +124,17 @@ class KBRetriever:
         self,
         encoder: KBEncoder,
         dataset: List[Dict],
-        precomputed_embed_keys_path: Optional[str]=None,
-        precomputed_embed_values_path: Optional[np.ndarray]=None,
+        precomputed_embed_keys_path: Optional[str] = None,
+        precomputed_embed_values_path: Optional[np.ndarray] = None,
     ):
         self.encoder = encoder
         self.dataset = dataset
         if precomputed_embed_keys_path is not None:
-            self.key_embds = np.load(precomputed_embed_keys_path).astype(
-                'float32'
-            )
+            self.key_embds = np.load(precomputed_embed_keys_path).astype('float32')
         else:
-            self.key_embds=None
+            self.key_embds = None
         if precomputed_embed_values_path is not None:
-            self.value_embds = np.load(precomputed_embed_values_path).astype(
-                'float32'
-            )
+            self.value_embds = np.load(precomputed_embed_values_path).astype('float32')
         else:
             self.value_embds = None
 
@@ -453,7 +448,9 @@ acc_parser.add_argument(
 )
 
 # Create the parser for the accuracy eval
-acc_results_parser = subparsers.add_parser('acc_results', parents=[acc_parser], help='run accuracy eval', add_help=False)
+acc_results_parser = subparsers.add_parser(
+    'acc_results', parents=[acc_parser], help='run accuracy eval', add_help=False
+)
 
 
 # Create the parser for the refusal command
@@ -516,11 +513,10 @@ basic_parser.add_argument('--subset_size', default=100, type=int, help='Size of 
 basic_parser.add_argument('--topk_size', type=int, default=-1, help='Size of top-k selection (-1 for all)')
 
 
-
 def eval_generate():
     """Evaluate generation using KB"""
     args = parser.parse_args()
-    
+
     dataset_dir = args.dataset_dir
     encoder_model_spec = args.encoder_spec
     encoder_path = args.encoder_dir
@@ -539,7 +535,6 @@ def eval_generate():
     precomputed_embed_values_path = args.precomputed_embed_values_path
 
     dataset = json.load(open(os.path.join(dataset_dir, test_dataset)))
-
 
     kb_layer_frequency = kb_layer_frequency
 
@@ -623,9 +618,7 @@ def _prepare_models(
         kb_scale_factor=kb_scale_factor,
     )
     config.update(kb_config.to_dict())
-    new_config = KBLaMConfig(
-        **config
-    )
+    new_config = KBLaMConfig(**config)
     model.config = new_config
 
     encoder = KBEncoder(
@@ -658,7 +651,6 @@ def eval_accuracy(
 ):
     """Evaluate accuracy using KB"""
 
-    
     if kb_layer_frequency == -1:
         kb_layer_frequency = 3
 
@@ -672,7 +664,7 @@ def eval_accuracy(
     dataset_subset = [dataset[i] for i in dataset_subset_idx]
 
     kb_embedding_real = kb_retriever.get_key_embeddings(dataset_subset_idx)
-    
+
     format_func_map = {"llama3": _format_Q_llama, "phi3": _format_Q_phi3}
 
     if not fancy_question:
@@ -719,17 +711,19 @@ def eval_accuracy(
             acc = (weight.sum(1).argmax(1) == label).mean()
             top_5_predictions = torch.topk(torch.from_numpy(weight.sum(1)), 5, dim=1)[1]
             top_5_acc = (top_5_predictions.numpy() == label[:, None]).any(1).mean()
-            if idx==15:
+            if idx == 15:
                 print(f"ACC & TOP 5 ACC: {idx} {(acc, top_5_acc)}")
                 print(f"min: {np.min(weight)}  max: {np.max(weight)}")
-            accs.append({
-                "idx":idx,
-                "acc":float(acc),
-                "top5acc":float(top_5_acc),
-            })
+            accs.append(
+                {
+                    "idx": idx,
+                    "acc": float(acc),
+                    "top5acc": float(top_5_acc),
+                }
+            )
 
-    np.save(save_path / f"{exp_config}_acc.npy", np.array([(a["acc"],a["top5acc"]) for a in accs]))
-    
+    np.save(save_path / f"{exp_config}_acc.npy", np.array([(a["acc"], a["top5acc"]) for a in accs]))
+
     return accs
 
 
@@ -789,29 +783,24 @@ def eval_accuracy_cli():
     )
 
 
-def write_to_json(
-    data: Any,
-    filepath: str,
-    indent: int = 4,
-    encoding: str = 'utf-8'
-) -> bool:
+def write_to_json(data: Any, filepath: str, indent: int = 4, encoding: str = 'utf-8') -> bool:
     """
     Write a dictionary to a JSON file with error handling and formatting options.
-    
+
     Args:
         data: Dictionary to write to JSON file
         filepath: Path where the JSON file should be saved
         indent: Number of spaces for indentation (default: 4)
         encoding: File encoding (default: 'utf-8')
-    
+
     Raises:
         TypeError: If data is not a dictionary
     """
-    
+
     try:
         # Convert string path to Path object
         file_path = Path(filepath)
-        
+
         # Write the JSON file
         with open(file_path, 'w', encoding=encoding) as f:
             json.dump(
@@ -819,12 +808,12 @@ def write_to_json(
                 f,
                 indent=indent,
                 sort_keys=True,  # For consistent output
-                default=str      # Handle non-serializable objects by converting to string
+                default=str,  # Handle non-serializable objects by converting to string
             )
-        
+
     except Exception as e:
         print(f"Error writing JSON file: {str(e)}")
-    
+
 
 def run_accuracy_evalution():
     args = parser.parse_args()
@@ -869,7 +858,7 @@ def run_accuracy_evalution():
     accuracy_results = []
     for x in xs:
         print(f"kb_size {x}")
-        
+
         accs = eval_accuracy(
             tokenizer,
             kb_retriever,
@@ -886,12 +875,9 @@ def run_accuracy_evalution():
         )
         shutil.rmtree(args.attn_save_dir)
         os.mkdir(args.attn_save_dir)
-        accuracy_results.append({
-            "kb_size":x,
-            "accuracy_results":accs
-        })
+        accuracy_results.append({"kb_size": x, "accuracy_results": accs})
     write_to_json(accuracy_results, os.path.join(args.log_save_dir, "accuracy_results.json"))
-                
+
 
 def eval_refusal():
     "Evaluate refusal to answer questions the KB is not relevant for"
@@ -1048,8 +1034,6 @@ def eval():
         )
         kb_embedding_real = (kb_embedding_real[0], kb_embedding_real[1])
 
-
-
         config_str = f"{exp_config_str}__kb_{subset_size}__seed_{seed}"
         with torch.autograd.no_grad():
 
@@ -1059,7 +1043,7 @@ def eval():
                 kb_kvs=None,
                 max_new_tokens=40,
                 tokenizer=tokenizer,
-                output_attentions=False
+                output_attentions=False,
             )
 
             outputs_true_kb = model.generate(
@@ -1071,7 +1055,7 @@ def eval():
                 output_attentions=True,
                 save_attention_weights=True,
                 attention_save_loc=output_dir,
-                attention_file_base_name=config_str
+                attention_file_base_name=config_str,
             )
         print("decoding")
         outputs_no_kb = tokenizer.batch_decode(outputs_no_kb, skip_special_tokens=False)
@@ -1095,8 +1079,6 @@ def eval():
             answer.append(dataset_subset[i]["A"])
             print("--------------------")
         print("******")
-
-    
 
     rogue_score = rouge.compute(predictions=predictions, references=answer)
     np.savez(os.path.join(attn_summary_save_dir, f"{config_str}_rouge.npy"), **rogue_score)

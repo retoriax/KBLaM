@@ -20,7 +20,6 @@ print('\n'.join(output))
 endef
 export PRINT_HELP_PYSCRIPT # End of python section
 
-
 LLAMA_BASE_DIR='/home/t-wangx/llama_weights/llama3_8b_ins'
 LLAMA_HF='/kblam_llama_unified/kblam_unified'
 PHI3_HF='/datadisk/data/gcrbackup/hf_models/phi3'
@@ -47,6 +46,7 @@ create_train_test_split:
 															--embeddings_values_path ${DATASET_DIR}/synthetic_data_oai_embd_value.npy \
 															--output_path /datadisk/data/train_test_split \
 															--split_index 120000
+
 
 train: ## Train kb adapter
 	python train.py --model_dir ${LLAMA_BASE_DIR} \
@@ -108,6 +108,7 @@ train-phi3-oai: ## Train kb adapter
 					--train_dataset synthetic_data \
 					--N 120000 \
 					--B 32 \
+
 					--steps 30001 \
 					--encoder_spec OAI \
 					--use_cached_embd \
@@ -129,6 +130,7 @@ train-phi3-oai: ## Train kb adapter
 
 
 #----------------- phi eval --------------------------------------
+
 
 eval-acc-phi3-oai: ## Eval kb adapter
 	python eval.py accuracy \
@@ -195,7 +197,6 @@ eval-gen-phi3-oai: ## Eval kb adapter
 		--llm_type "phi3" \
 		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_key.npy \
 		--precomputed_embed_values_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_value.npy
-
 
 
 eval-ref-phi3-oai: ## Eval kb adapter

@@ -370,8 +370,12 @@ class KBLaMPhi3Attention(nn.Module):
                 kb_idx = self.layer_idx // kb_layer_frequency
                 if len(kb_keys.shape) == 2:  # Not batch dim
                     kb_len = kb_keys.shape[0]
-                    kb_keys = kb_keys.reshape(kb_len, 1 + self.config.num_hidden_layers // kb_layer_frequency, -1)[:, kb_idx]
-                    kb_values = kb_values.reshape(kb_len, 1 + self.config.num_hidden_layers // kb_layer_frequency, -1)[:, kb_idx]
+                    kb_keys = kb_keys.reshape(kb_len, 1 + self.config.num_hidden_layers // kb_layer_frequency, -1)[
+                        :, kb_idx
+                    ]
+                    kb_values = kb_values.reshape(kb_len, 1 + self.config.num_hidden_layers // kb_layer_frequency, -1)[
+                        :, kb_idx
+                    ]
                     kb_keys = kb_keys.view(kb_len, self.num_heads, self.head_dim).transpose(0, 1)
                     kb_values = kb_values.view(kb_len, self.num_heads, self.head_dim).transpose(0, 1)
                     kb_keys = kb_keys.unsqueeze(0).expand(bsz, self.num_heads, kb_len, self.head_dim)
@@ -381,8 +385,12 @@ class KBLaMPhi3Attention(nn.Module):
                     value_states = torch.concat([kb_values, value_states], dim=2)
                 elif len(kb_keys.shape) == 3:  # Has a batch dim
                     kb_len = kb_keys.shape[1]
-                    kb_keys = kb_keys.view(bsz, kb_len, 1 + self.config.num_hidden_layers // kb_layer_frequency, -1)[:, :, kb_idx]
-                    kb_values = kb_values.view(bsz, kb_len, 1 + self.config.num_hidden_layers // kb_layer_frequency, -1)[:, :, kb_idx]
+                    kb_keys = kb_keys.view(bsz, kb_len, 1 + self.config.num_hidden_layers // kb_layer_frequency, -1)[
+                        :, :, kb_idx
+                    ]
+                    kb_values = kb_values.view(
+                        bsz, kb_len, 1 + self.config.num_hidden_layers // kb_layer_frequency, -1
+                    )[:, :, kb_idx]
                     kb_keys = kb_keys.view(bsz, kb_len, self.num_heads, self.head_dim).transpose(1, 2)
                     kb_values = kb_values.view(bsz, kb_len, self.num_heads, self.head_dim).transpose(1, 2)
                     # Append the KB keys and values in the front, in front of padding
@@ -1047,7 +1055,7 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
         else:
             # model_inputs = {"input_ids": input_ids}
             model_inputs["input_ids"] = input_ids.contiguous()
-        
+
         model_inputs.update(
             {
                 "position_ids": position_ids,
@@ -1059,7 +1067,6 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
                 # "save_attention_weights": save_attention_weights,
                 # "attention_save_loc": attention_save_loc,
                 # "attention_file_base_name": attention_file_base_name,
-
             }
         )
         return model_inputs
