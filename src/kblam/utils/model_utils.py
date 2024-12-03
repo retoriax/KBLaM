@@ -1,9 +1,7 @@
-import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from kblam.kb_encoder import KBEncoder
 from kblam.models.kblam_processor import EncoderArgs, KBLaMProcessor
-from kblam.models.llama_model import KblamLlamaForCausalLM
+from kblam.models.llama3_model import KblamLlamaForCausalLM
 
 
 def load_model_and_processor(
