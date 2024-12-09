@@ -258,22 +258,28 @@ def perform_eval(
     for pred, gt in zip(model_outputs, answers):
         print(f"PREDICTION: {pred}")
         print(f"GT: {gt}")
-    rogue_score = rouge.compute(predictions=model_outputs, references=answers)
-    print(rogue_score)
+    rouge_scores = rouge.compute(predictions=model_outputs, references=answers)
+    print(rouge_scores)
+
+    results_dict = {k:float(v) for k, v in rouge_scores.items()}
+
     bertscore = bert_score.compute(
         predictions=model_outputs, references=answers, lang="en", model_type='microsoft/deberta-xlarge-mnli'
     )
-    bert_scores = []
+    # bert_scores = []
+    # bert_scores = {}
     for k, v in bertscore.items():
         if isinstance(v, list):
-            bert_scores.append(np.mean(v))
+            # bert_scores.append(np.mean(v))
+            results_dict[f"bert_score_{k}"] = float(np.mean(v))
             print(k, np.mean(v))
     results = ''
     for a, A in full_outputs:
         results += f'Model output: {a}\nTrue answer: {A}\n-------\n'
     if eval_mode == 'kb':
         eval_mode = encoder_model_spec + eval_mode
-    return results, bert_scores + list(rogue_score.values())
+
+    return results, results_dict
 
 
 def perform_eval_refusal(
@@ -369,7 +375,6 @@ parser = argparse.ArgumentParser(description="Evaluation script")
 # Add arguments that will be shared across all subcommands
 parent_parser = argparse.ArgumentParser(add_help=False)
 
-parent_parser.add_argument('--ckpt_idx', type=int, default=10000, help='Checkpoint to use')
 parent_parser.add_argument('--dataset_dir', type=str, help='Directory containing the dataset')
 parent_parser.add_argument('--encoder_dir', type=str, help='Directory containing the encoder model')
 parent_parser.add_argument('--encoder_spec', type=str, default='OAI', help='Specification for the encoder model')
@@ -386,7 +391,6 @@ parent_parser.add_argument('--llm_base_dir', type=str, help='llm to load, can be
 parent_parser.add_argument(
     '--llm_type', type=str, default="phi3", choices=["llama3", "phi3"], help='Type of language model to use'
 )
-parent_parser.add_argument('--lr', type=float, default=0.0005, help='Learning rate')
 parent_parser.add_argument('--model_dir', type=str, help='Directory containing the model')
 parent_parser.add_argument('--save_dir', type=str, help='Directory to save outputs')
 parent_parser.add_argument('--seed', type=int, help='Random seed for reproducibility')
@@ -556,7 +560,7 @@ def eval_generate():
         precomputed_embed_values_path=precomputed_embed_values_path,
     )
 
-    gen_results, score_output = perform_eval(
+    gen_results, score_results = perform_eval(
         model,
         tokenizer,
         kb_retriever,
@@ -570,10 +574,11 @@ def eval_generate():
         kb_scale_factor=kb_scale_factor,
     )
     mem_cost = torch.cuda.max_memory_reserved('cuda')
-    score_output.append(mem_cost)
+    score_results["mem_cost"] = mem_cost
 
     (Path(args.save_dir) / exp_config).mkdir(exist_ok=True, parents=True)
-    np.save(os.path.join(args.save_dir, exp_config), np.array(score_output))
+    write_to_json(score_results, Path(args.save_dir) / f"{exp_config}.json")
+    print(score_results)
     text_file = open(os.path.join(args.save_dir, exp_config + '.txt'), "w")
     text_file.write(gen_results)
 

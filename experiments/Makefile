@@ -20,7 +20,7 @@ print('\n'.join(output))
 endef
 export PRINT_HELP_PYSCRIPT # End of python section
 
-LLAMA_BASE_DIR='/home/t-wangx/llama_weights/llama3_8b_ins'
+LLAMA_BASE_DIR='/datadisk/tk/llama3_8b_ins'
 LLAMA_HF='/kblam_llama_unified/kblam_unified'
 PHI3_HF='/datadisk/data/gcrbackup/hf_models/phi3'
 DATASET_DIR='/datadisk/data/gcrbackup/oai_embd'
@@ -30,6 +30,12 @@ PHI3_MODEL_CHKPT='/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_
 ENCODER_FOR_PHI3_CHKPT='/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugFineTuneQueryKeyFromkey_synthetic_data_OAI_step_20000'
 LLAMA_MODEL_CHKPT='/datadisk/tk/llama3_8b_ins' 
 ENCODER_FOR_LLAMA_CHKPT='/datadisk/tk/encoder_ckpt_20000_OAI.pt'
+QUERY_HEAD_PATH='/datadisk/tk/learned_query_head_20000_OAI.pth'
+
+ATTN_SAVE_DIR='/datadisk/kblamatt2'
+LOG_SAVE_DIR='/datadisk/kblamatt2/acc_results'
+
+
 LR=1e-4
 TRAIN_KB_SIZE=0 # Randomly pick KB size during training time
 OUTLIER_RATIO=-1 # Ratio of no-answer question in the batch, -1 stands for no such samples
@@ -108,7 +114,6 @@ train-phi3-oai: ## Train kb adapter
 					--train_dataset synthetic_data \
 					--N 120000 \
 					--B 32 \
-
 					--steps 30001 \
 					--encoder_spec OAI \
 					--use_cached_embd \
@@ -140,17 +145,15 @@ eval-acc-phi3-oai: ## Eval kb adapter
 		--llm_base_dir ${PHI3_HF} \
 		--model_dir ${PHI3_MODEL_CHKPT} \
 		--encoder_dir ${ENCODER_FOR_PHI3_CHKPT} \
-		--save_dir "/datadisk/kblamatt2" \
+		--save_dir ${ATTN_SAVE_DIR} \
 		--kb_layer_frequency ${KB_LAYER_FREQ} \
-		--ckpt_idx 20000 \
-		--lr 0 \
 		--kb_size 3200 \
 		--kb_scale_factor 100 \
 		--no-fancy_instruction \
 		--encoder_spec oai \
 		--llm_type "phi3" \
-		--attn_save_dir "/datadisk/kblam_attention" \
-		--log_save_dir "/datadisk/kblam_attention/acc_results" \
+		--attn_save_dir ${ATTN_SAVE_DIR} \
+		--log_save_dir ${LOG_SAVE_DIR} \
 		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_key.npy \
 		--precomputed_embed_values_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_value.npy
 
@@ -163,17 +166,15 @@ eval-acc-eval-phi3-oai: ## Eval kb adapter
 		--llm_base_dir ${PHI3_HF} \
 		--model_dir ${PHI3_MODEL_CHKPT} \
 		--encoder_dir ${ENCODER_FOR_PHI3_CHKPT} \
-		--save_dir "/datadisk/kblamatt2" \
+		--save_dir ${ATTN_SAVE_DIR} \
 		--kb_layer_frequency ${KB_LAYER_FREQ} \
-		--ckpt_idx 20000 \
-		--lr 0 \
 		--kb_size 3200 \
 		--kb_scale_factor 100 \
 		--no-fancy_instruction \
 		--encoder_spec oai \
 		--llm_type "phi3" \
-		--attn_save_dir "/datadisk/kblam_attention" \
-		--log_save_dir "/datadisk/kblam_attention/acc_results" \
+		--attn_save_dir ${ATTN_SAVE_DIR} \
+		--log_save_dir ${LOG_SAVE_DIR} \
 		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_key.npy \
 		--precomputed_embed_values_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_value.npy
 
@@ -186,10 +187,8 @@ eval-gen-phi3-oai: ## Eval kb adapter
 		--llm_base_dir ${PHI3_HF} \
 		--model_dir ${PHI3_MODEL_CHKPT} \
 		--encoder_dir ${ENCODER_FOR_PHI3_CHKPT} \
-		--save_dir "/datadisk/kblamatt2" \
+		--save_dir ${ATTN_SAVE_DIR} \
 		--kb_layer_frequency ${KB_LAYER_FREQ} \
-		--ckpt_idx 20000 \
-		--lr 0 \
 		--kb_size 3200 \
 		--kb_scale_factor 100 \
 		--no-fancy_instruction \
@@ -207,10 +206,8 @@ eval-ref-phi3-oai: ## Eval kb adapter
 		--llm_base_dir ${PHI3_HF} \
 		--model_dir ${PHI3_MODEL_CHKPT} \
 		--encoder_dir ${ENCODER_FOR_PHI3_CHKPT} \
-		--save_dir "/datadisk/kblamatt2" \
+		--save_dir ${ATTN_SAVE_DIR} \
 		--kb_layer_frequency ${KB_LAYER_FREQ} \
-		--ckpt_idx 20000 \
-		--lr 0 \
 		--kb_size 3200 \
 		--kb_scale_factor 100 \
 		--no-fancy_instruction \
@@ -229,10 +226,8 @@ eval-basic-phi3-oai: ## Eval kb adapter
 		--llm_base_dir ${PHI3_HF} \
 		--model_dir ${PHI3_MODEL_CHKPT} \
 		--encoder_dir ${ENCODER_FOR_PHI3_CHKPT} \
-		--save_dir "/datadisk/kblamatt2" \
+		--save_dir ${ATTN_SAVE_DIR} \
 		--kb_layer_frequency ${KB_LAYER_FREQ} \
-		--ckpt_idx 20000 \
-		--lr 0 \
 		--kb_size 3200 \
 		--kb_scale_factor 100 \
 		--no-fancy_instruction \
@@ -250,21 +245,19 @@ eval-acc-llama-oai: ## Eval kb adapter
 		--seed 1607 \
 		--dataset_dir ${TEST_DATASET_DIR} \
 		--test_dataset test_synthetic_data.json \
-		--llm_base_dir "/datadisk/tk/llama3_8b_ins" \
+		--llm_base_dir ${LLAMA_BASE_DIR} \
 		--model_dir ${LLAMA_MODEL_CHKPT} \
 		--encoder_dir ${ENCODER_FOR_LLAMA_CHKPT} \
-		--save_dir "/datadisk/kblamatt2" \
+		--save_dir ${ATTN_SAVE_DIR} \
 		--kb_layer_frequency ${KB_LAYER_FREQ} \
-		--ckpt_idx 20000 \
-		--lr 0 \
 		--kb_size 3200 \
 		--kb_scale_factor 100 \
 		--no-fancy_instruction \
 		--encoder_spec oai \
 		--llm_type "llama3" \
-		--attn_save_dir "/datadisk/kblamatt2" \
-		--log_save_dir "/datadisk/kblamatt2/acc_results" \
-		--query_head_path "/datadisk/tk/learned_query_head_20000_OAI.pth" \
+		--attn_save_dir ${ATTN_SAVE_DIR} \
+		--log_save_dir ${LOG_SAVE_DIR} \
+		--query_head_path ${QUERY_HEAD_PATH} \
 		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_key.npy \
 		--precomputed_embed_values_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_value.npy 
 
@@ -274,21 +267,19 @@ eval-acc-eval-llama-oai: ## Eval kb adapter
 		--seed 1607 \
 		--dataset_dir ${TEST_DATASET_DIR} \
 		--test_dataset test_synthetic_data.json \
-		--llm_base_dir "/datadisk/tk/llama3_8b_ins" \
+		--llm_base_dir ${LLAMA_BASE_DIR} \
 		--model_dir ${LLAMA_MODEL_CHKPT} \
 		--encoder_dir ${ENCODER_FOR_LLAMA_CHKPT} \
-		--save_dir "/datadisk/kblamatt2" \
+		--save_dir ${ATTN_SAVE_DIR} \
 		--kb_layer_frequency ${KB_LAYER_FREQ} \
-		--ckpt_idx 20000 \
-		--lr 0 \
 		--kb_size 100 \
 		--kb_scale_factor 100 \
 		--no-fancy_instruction \
 		--encoder_spec oai \
 		--llm_type "llama3" \
-		--attn_save_dir "/datadisk/kblamatt2" \
-		--log_save_dir "/datadisk/kblamatt2/acc_results" \
-		--query_head_path "/datadisk/tk/learned_query_head_20000_OAI.pth" \
+		--attn_save_dir ${ATTN_SAVE_DIR} \
+		--log_save_dir ${LOG_SAVE_DIR} \
+		--query_head_path ${QUERY_HEAD_PATH} \
 		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_key.npy \
 		--precomputed_embed_values_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_value.npy 
 
@@ -298,19 +289,17 @@ eval-ref-llama-oai: ## Eval kb adapter
 		--seed 1607 \
 		--dataset_dir ${TEST_DATASET_DIR} \
 		--test_dataset test_synthetic_data.json \
-		--llm_base_dir "/datadisk/tk/llama3_8b_ins" \
+		--llm_base_dir ${LLAMA_BASE_DIR} \
 		--model_dir ${LLAMA_MODEL_CHKPT} \
 		--encoder_dir ${ENCODER_FOR_LLAMA_CHKPT} \
-		--save_dir "/datadisk/kblamatt2" \
+		--save_dir ${ATTN_SAVE_DIR} \
 		--kb_layer_frequency ${KB_LAYER_FREQ} \
-		--ckpt_idx 20000 \
-		--lr 0 \
 		--kb_size 100 \
 		--kb_scale_factor 100 \
 		--no-fancy_instruction \
 		--encoder_spec oai \
 		--llm_type "llama3" \
-		--query_head_path "/datadisk/tk/learned_query_head_20000_OAI.pth" \
+		--query_head_path ${QUERY_HEAD_PATH} \
 		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_key.npy \
 		--precomputed_embed_values_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_value.npy 
 
@@ -320,20 +309,18 @@ eval-basic-llama-oai: ## Eval kb adapter
 		--seed 1607 \
 		--dataset_dir ${TEST_DATASET_DIR} \
 		--test_dataset test_synthetic_data.json \
-		--llm_base_dir "/datadisk/tk/llama3_8b_ins" \
+		--llm_base_dir ${LLAMA_BASE_DIR} \
 		--model_dir ${LLAMA_MODEL_CHKPT} \
 		--encoder_dir ${ENCODER_FOR_LLAMA_CHKPT} \
-		--save_dir "/datadisk/kblamatt2" \
+		--save_dir ${ATTN_SAVE_DIR} \
 		--kb_layer_frequency ${KB_LAYER_FREQ} \
-		--ckpt_idx 20000 \
 		--exp_config_str "llama3_kb_scale_100" \
-		--lr 0 \
 		--kb_size 100 \
 		--kb_scale_factor 100 \
 		--no-fancy_instruction \
 		--encoder_spec oai \
 		--llm_type "llama3" \
-		--query_head_path "/datadisk/tk/learned_query_head_20000_OAI.pth" \
+		--query_head_path ${QUERY_HEAD_PATH} \
 		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_key.npy \
 		--precomputed_embed_values_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_value.npy 
 

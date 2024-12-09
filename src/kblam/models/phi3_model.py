@@ -890,7 +890,6 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
         assert len(learned_query_heads) == self.model.config.num_hidden_layers
         for i, attn_layer in enumerate(self.model.layers):
             attn_layer.self_attn.q_proj_new.load_state_dict(learned_query_heads[f'layer_{i}'])
-        print('Learned query heads loaded.')
 
     # Ignore copy
     @add_start_docstrings_to_model_forward(PHI3_INPUTS_DOCSTRING)
@@ -945,8 +944,6 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
-        # print(f"{attention_save_loc} {attention_file_base_name} {save_attention_weights}")
-        # print(kb_config)
         outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -1047,7 +1044,6 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
         # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
         model_inputs = copy.copy(kwargs)
         del model_inputs["cache_position"]
-        # print(model_inputs)
 
         if inputs_embeds is not None and past_key_values is None:
             # model_inputs = {"inputs_embeds": inputs_embeds}
@@ -1063,10 +1059,6 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
                 "use_cache": kwargs.get("use_cache"),
                 "attention_mask": attention_mask,
                 "kb_kvs": kb_kvs,
-                # "kb_config": kb_config,
-                # "save_attention_weights": save_attention_weights,
-                # "attention_save_loc": attention_save_loc,
-                # "attention_file_base_name": attention_file_base_name,
             }
         )
         return model_inputs

@@ -277,17 +277,13 @@ class KblamLlamaAttention(nn.Module):
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32)
         if not attn_weights.requires_grad:
             # TODO: Make this function injectable
-            # print("CHECKING SAVE_ATTENTION_WEIGHTS", save_attention_weights)
             if save_attention_weights:
                 if q_len > 1:
                     save_path = os.path.join(attention_save_loc, f'{attention_file_base_name}_{self.layer_idx}.npy')
-                    print("SAVING", attention_save_loc, save_path)
                     np.save(
                         save_path,
                         attn_weights.to(torch.float32).cpu().detach().numpy(),
                     )
-        else:
-            print("ATTN WEIGHTS REQUIRE DGRAD")
         attn_weights = attn_weights.to(query_states.dtype)
         attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
         attn_output = torch.matmul(attn_weights, value_states)
@@ -646,7 +642,6 @@ class KblamLlamaForCausalLM(LlamaPreTrainedModel):
     def __init__(self, config: LlamaConfig):
         super().__init__(config)
         base_model_name_or_path = config.base_model_name_or_path if hasattr(config, "base_model_name_or_path") else config._name_or_path
-        print(f"BASE MODEL: {base_model_name_or_path}")
         self.model = LlamaModel.from_pretrained(base_model_name_or_path, torch_dtype=config.torch_dtype)
         self.vocab_size = self.model.config.vocab_size
         self.lm_head = nn.Linear(self.model.config.hidden_size, self.model.config.vocab_size, bias=False)
@@ -691,7 +686,7 @@ class KblamLlamaForCausalLM(LlamaPreTrainedModel):
         for i, attn_layer in enumerate(self.model.layers):
             attn_layer.self_attn.q_proj_new.load_state_dict(learned_query_heads[f'layer_{i}'])
         self.config.sep_query_head = True
-        print('Learned query heads loaded.')
+        
 
     @add_start_docstrings_to_model_forward(LLAMA_INPUTS_DOCSTRING)
     @replace_return_docstrings(output_type=CausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC)

@@ -83,7 +83,10 @@ parser.add_argument("--model_dir", type=str, default=None, help="Where is the ba
 parser.add_argument("--hf_model_spec", type=str, default="meta-llama/Llama-3.2-1B", choices=["meta-llama/Meta-Llama-3-8B", "microsoft/Phi-3-mini-4k-instruct", "meta-llama/Llama-3.2-1B"])
 parser.add_argument("--hf_token", type=str,default=None,help="Huggingface token")
 parser.add_argument("--model_save_dir", type=str, default="output", help="Place to save the checkpoints")
-parser.add_argument("--kb_size", type=int, default=None, help="The size of the KB set size. If dynamic, it will be randomly selected at each step.")
+
+parser.add_argument("--kb_size", type=int, default=None, help="The size of the KB set size")
+parser.add_argument("--dynamic_kb_size", nargs=2, type=int, default=None, help="The size of the KB set size. Set a dynamic range for the kbsize specify min and max")
+
 parser.add_argument("--duplicate_true_kb", action=argparse.BooleanOptionalAction, default=True, help="Duplicate true entity's KB token")
 parser.add_argument("--length_invariance", action=argparse.BooleanOptionalAction, default=False, help="Scale the raw attention score")
 parser.add_argument("--outlier_ratio", type=int, default=1, help="Introduce questions without correct KB entites")
@@ -255,10 +258,11 @@ def get_prefix_str(args):
     use_data_aug = args.use_data_aug
     sep_query_head = args.sep_query_head
     kb_size = args.kb_size
-    if kb_size == -1:
-        kb_size = None  # Progressively increase size
-    elif kb_size == 0:
+    dynamic_kb_size = args.dynamic_kb_size
+    
+    if dynamic_kb_size is not None:
         kb_size = "dynamic"  # Random size
+
     duplicate_true_kb = args.duplicate_true_kb
     length_invariance = args.length_invariance
     outlier_ratio = args.outlier_ratio
@@ -320,13 +324,15 @@ def _load_cached_embeddigns(encoder_model_spec: str, dataset_dir: str, dataset_n
     return key_embds, value_embds
 
 
-def context_set_size_scheduler(epoch: int, kb_size: str | int) -> int:
+def context_set_size_scheduler(epoch: int, kb_size: List[int] | int) -> int:
     """Determines the KB size for the current training step"""
-    if kb_size == "dynamic":
-        return np.random.randint(10, 200)
+    if isinstance(kb_size, list):
+        return np.random.randint(kb_size[0], kb_size[1])
+    
     if not kb_size:
         round = (epoch) // 100
         return 4 * (round + 1)
+    
     return kb_size
 
 
@@ -507,7 +513,7 @@ class Trainer:
         lr: float,
         device: torch.device,
         use_lr_decay: bool,
-        kb_size: int,
+        kb_size: int|List[int],
         llm_savename: str,
         encoder_savename: str,
         output_dir: str,
@@ -689,11 +695,14 @@ def main():
     model_save_dir = args.model_save_dir
     sep_query_head = args.sep_query_head
     kb_size = args.kb_size
+    dynamic_kb_size = args.dynamic_kb_size
+
+    if kb_size is not None and dynamic_kb_size is not None:
+        raise ValueError("Can't specify kb_size and dynamic_kb_size. Use only one")
+
+    kb_size = kb_size if kb_size is not None else dynamic_kb_size
+
     gradient_accm_step = args.gradient_accm_step
-    if kb_size == -1:
-        kb_size = None  # Progressively increase size
-    elif kb_size == 0:
-        kb_size = "dynamic"  # Random size
 
     length_invariance = args.length_invariance
     outlier_ratio = args.outlier_ratio
