@@ -18,6 +18,7 @@
 import inspect
 import math
 import os
+import copy
 import warnings
 from typing import List, Optional, Tuple, Union
 
@@ -335,10 +336,9 @@ class KBLaMPhi3Attention(nn.Module):
         query_states_2 = self.q_proj_new(hidden_states)
 
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
+        query_states_2 = query_states_2.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-
-        query_states_2 = query_states_2.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
 
         kv_seq_len = key_states.shape[-2]
         if past_key_value is not None:
@@ -370,8 +370,12 @@ class KBLaMPhi3Attention(nn.Module):
                 kb_idx = self.layer_idx // kb_layer_frequency
                 if len(kb_keys.shape) == 2:  # Not batch dim
                     kb_len = kb_keys.shape[0]
-                    kb_keys = kb_keys.reshape(kb_len, 1 + self.config.num_hidden_layers // 3, -1)[:, kb_idx]
-                    kb_values = kb_values.reshape(kb_len, 1 + self.config.num_hidden_layers // 3, -1)[:, kb_idx]
+                    kb_keys = kb_keys.reshape(kb_len, 1 + self.config.num_hidden_layers // kb_layer_frequency, -1)[
+                        :, kb_idx
+                    ]
+                    kb_values = kb_values.reshape(kb_len, 1 + self.config.num_hidden_layers // kb_layer_frequency, -1)[
+                        :, kb_idx
+                    ]
                     kb_keys = kb_keys.view(kb_len, self.num_heads, self.head_dim).transpose(0, 1)
                     kb_values = kb_values.view(kb_len, self.num_heads, self.head_dim).transpose(0, 1)
                     kb_keys = kb_keys.unsqueeze(0).expand(bsz, self.num_heads, kb_len, self.head_dim)
@@ -381,8 +385,12 @@ class KBLaMPhi3Attention(nn.Module):
                     value_states = torch.concat([kb_values, value_states], dim=2)
                 elif len(kb_keys.shape) == 3:  # Has a batch dim
                     kb_len = kb_keys.shape[1]
-                    kb_keys = kb_keys.view(bsz, kb_len, 1 + self.config.num_hidden_layers // 3, -1)[:, :, kb_idx]
-                    kb_values = kb_values.view(bsz, kb_len, 1 + self.config.num_hidden_layers // 3, -1)[:, :, kb_idx]
+                    kb_keys = kb_keys.view(bsz, kb_len, 1 + self.config.num_hidden_layers // kb_layer_frequency, -1)[
+                        :, :, kb_idx
+                    ]
+                    kb_values = kb_values.view(
+                        bsz, kb_len, 1 + self.config.num_hidden_layers // kb_layer_frequency, -1
+                    )[:, :, kb_idx]
                     kb_keys = kb_keys.view(bsz, kb_len, self.num_heads, self.head_dim).transpose(1, 2)
                     kb_values = kb_values.view(bsz, kb_len, self.num_heads, self.head_dim).transpose(1, 2)
                     # Append the KB keys and values in the front, in front of padding
@@ -882,7 +890,6 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
         assert len(learned_query_heads) == self.model.config.num_hidden_layers
         for i, attn_layer in enumerate(self.model.layers):
             attn_layer.self_attn.q_proj_new.load_state_dict(learned_query_heads[f'layer_{i}'])
-        print('Learned query heads loaded.')
 
     # Ignore copy
     @add_start_docstrings_to_model_forward(PHI3_INPUTS_DOCSTRING)
@@ -938,8 +945,6 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
-        # print(f"{attention_save_loc} {attention_file_base_name} {save_attention_weights}")
-        # print(kb_config)
         outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -995,9 +1000,9 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
         inputs_embeds=None,
         kb_kvs: Optional[tuple] = None,
         kb_config: Optional[KBLaMConfig] = None,
-        save_attention_weights: bool = False,
-        attention_save_loc: Optional[str] = None,
-        attention_file_base_name: Optional[str] = None,
+        # save_attention_weights: bool = False,
+        # attention_save_loc: Optional[str] = None,
+        # attention_file_base_name: Optional[str] = None,
         **kwargs,
     ):
         if past_key_values is not None:
@@ -1038,10 +1043,15 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
                 position_ids = position_ids[:, -input_ids.shape[1] :]
 
         # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
+        model_inputs = copy.copy(kwargs)
+        del model_inputs["cache_position"]
+
         if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
+            # model_inputs = {"inputs_embeds": inputs_embeds}
+            model_inputs["inputs_embeds"] = inputs_embeds
         else:
-            model_inputs = {"input_ids": input_ids}
+            # model_inputs = {"input_ids": input_ids}
+            model_inputs["input_ids"] = input_ids.contiguous()
 
         model_inputs.update(
             {
@@ -1050,11 +1060,7 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
                 "use_cache": kwargs.get("use_cache"),
                 "attention_mask": attention_mask,
                 "kb_kvs": kb_kvs,
-                "kb_config": kb_config,
-                "save_attention_weights": save_attention_weights,
-                "attention_save_loc": attention_save_loc,
-                "attention_file_base_name": attention_file_base_name,
-
+                "kb_config":kb_config
             }
         )
         return model_inputs

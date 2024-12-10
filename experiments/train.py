@@ -13,7 +13,14 @@ import torch
 import transformers
 from rich.console import Console
 from rich.logging import RichHandler
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 from rich.theme import Theme
 from torch.nn import CrossEntropyLoss
 from torch.optim.optimizer import ParamsT
@@ -25,6 +32,7 @@ from kblam.models.phi3_model import KBLaMPhi3ForCausalLM
 from kblam.models.kblam_config import KBLaMConfig
 from kblam.utils.data_utils import aug_row, generate_multi_entity_qa, get_i_dont_know_ans
 from kblam.utils.train_utils import get_kb_embd, context_set_size_scheduler, get_prefix_str
+
 
 LOGFORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 LOGFORMAT_RICH = "%(message)s"
@@ -71,7 +79,9 @@ parser.add_argument("--model_dir_to_resume", type=str, default=None, help="Check
 parser.add_argument("--hf_model_spec", type=str, default="meta-llama/Llama-3.2-1B-Instruct", choices=["meta-llama/Meta-Llama-3-8B", "microsoft/Phi-3-mini-4k-instruct", "meta-llama/Llama-3.2-1B-Instruct"])
 parser.add_argument("--hf_token", type=str,default=None,help="Huggingface token")
 parser.add_argument("--model_save_dir", type=str, default="output", help="Place to save the checkpoints")
-parser.add_argument("--kb_size", type=int, default=None, help="The size of the KB set size. If dynamic, it will be randomly selected at each step.")
+parser.add_argument("--kb_size", type=int, default=None, help="The size of the KB set size")
+parser.add_argument("--dynamic_kb_size", nargs=2, type=int, default=None, help="The size of the KB set size. Set a dynamic range for the kbsize specify min and max")
+parser.add_argument("--duplicate_true_kb", action=argparse.BooleanOptionalAction, default=True, help="Duplicate true entity's KB token")
 parser.add_argument("--length_invariance", action=argparse.BooleanOptionalAction, default=False, help="Scale the raw attention score")
 parser.add_argument("--outlier_num", type=int, default=1, help="Introduce questions without correct KB entites")
 parser.add_argument("--multi_entities", type=int, default=2, help="Introduce questions involving multiple entities")
@@ -195,6 +205,7 @@ def get_batch(
     labels = []
     if multi_entities is not None:
         assert not include_outlier
+
     if random_sample:
         if multi_entities is not None:
             batch_indices = np.random.choice(len(dataset), (B, multi_entities), replace=False)
@@ -206,6 +217,7 @@ def get_batch(
     def get_question_and_answer(idx):
         if use_extended_qa:
             Q, A = dataset[idx]["extended_Q"], dataset[idx]["extended_A"]
+
         elif multi_entities is not None:
             Q, A = generate_multi_entity_qa(
                 [dataset[i]["name"] for i in idx],
@@ -236,6 +248,48 @@ def get_batch(
     return input_ids, attention_masks, labels, batch_indices
 
 
+
+def get_prefix_str(args):
+    use_data_aug = args.use_data_aug
+    sep_query_head = args.sep_query_head
+    kb_size = args.kb_size
+    dynamic_kb_size = args.dynamic_kb_size
+    
+    if dynamic_kb_size is not None:
+        kb_size = "dynamic"  # Random size
+
+    duplicate_true_kb = args.duplicate_true_kb
+    length_invariance = args.length_invariance
+    outlier_ratio = args.outlier_ratio
+    use_outlier = outlier_ratio != -1
+    multi_entities = args.multi_entities
+    use_extended_qa = args.use_extended_qa
+    kb_token_layer_frequency = args.kb_token_layer_frequency
+    lr = args.lr
+
+    prefix_string = f"stage1_lr_{lr}"
+    if kb_token_layer_frequency is not None:
+        prefix_string += f"KBTokenLayerFreq{kb_token_layer_frequency}"
+    if use_extended_qa:
+        prefix_string += "UseExtendedQA"
+    if multi_entities is not None:
+        prefix_string += f"MultiEntities{multi_entities}"
+    if use_outlier:
+        prefix_string += f"UseOutlier{outlier_ratio}"
+    if length_invariance:
+        prefix_string += "LengthInvariant"
+    if not duplicate_true_kb:
+        prefix_string += "NoDuplicate"
+    if kb_size is not None:
+        prefix_string += f"KBSize{kb_size}"
+    if sep_query_head:
+        prefix_string += "SepQueryHead"
+    if use_data_aug:
+        prefix_string += "UseDataAug"
+    return prefix_string
+
+
+
 def _load_cached_embeddigns(encoder_model_spec: str, dataset_dir: str, dataset_name: str, key_embd_src: str):
 
     if encoder_model_spec == "OAI":
@@ -264,6 +318,18 @@ def _load_cached_embeddigns(encoder_model_spec: str, dataset_dir: str, dataset_n
             )
         ).astype("float32")
     return key_embds, value_embds
+
+
+def context_set_size_scheduler(epoch: int, kb_size: List[int] | int) -> int:
+    """Determines the KB size for the current training step"""
+    if isinstance(kb_size, list):
+        return np.random.randint(kb_size[0], kb_size[1])
+    
+    if not kb_size:
+        round = (epoch) // 100
+        return 4 * (round + 1)
+    
+    return kb_size
 
 
 def get_step_config(
@@ -441,7 +507,7 @@ class Trainer:
         lr: float,
         device: torch.device,
         use_lr_decay: bool,
-        kb_size: int,
+        kb_size: int|List[int],
         llm_savename: str,
         output_dir: str,
         sep_query_head: bool = False,
@@ -506,6 +572,7 @@ class Trainer:
 
         loss_fct = CrossEntropyLoss(reduction="none")
 
+
         with create_custom_progress_bar(console=console) as pbar:
             task = pbar.add_task("Training", total=self.num_steps, loss=100)
             for step in range(start_step, self.num_steps, 1):
@@ -537,7 +604,7 @@ class Trainer:
                         attention_mask=attention_masks,
                         kb_kvs=kb_embedding,
                         output_attentions=True,
-                        kb_config=kb_config,
+                        kb_config=kb_config
                     )
                     logits = out["logits"]
 
@@ -605,8 +672,8 @@ def main():
     seed = args.seed
     N = args.N
     B = args.B
-    total_steps = args.total_steps
 
+    total_steps = args.total_steps
     encoder_spec = args.encoder_spec
     key_embd_src = args.key_embd_src
     use_data_aug = args.use_data_aug
@@ -617,11 +684,14 @@ def main():
     model_save_dir = args.model_save_dir
     sep_query_head = args.sep_query_head
     kb_size = args.kb_size
+    dynamic_kb_size = args.dynamic_kb_size
+
+    if kb_size is not None and dynamic_kb_size is not None:
+        raise ValueError("Can't specify kb_size and dynamic_kb_size. Use only one")
+
+    kb_size = kb_size if kb_size is not None else dynamic_kb_size
+
     gradient_accm_step = args.gradient_accm_step
-    if kb_size == -1:
-        kb_size = None  # Progressively increase size
-    elif kb_size == 0:
-        kb_size = "dynamic"  # Random size
 
     length_invariance = args.length_invariance
     outlier_num = args.outlier_num

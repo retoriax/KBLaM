@@ -20,21 +20,39 @@ print('\n'.join(output))
 endef
 export PRINT_HELP_PYSCRIPT # End of python section
 
-
-LLAMA_BASE_DIR='/home/t-wangx/llama_weights/llama3_8b_ins'
-LLAMA_HF='/datadisk/data/gcrbackup/hf_models/Meta-Llama-3-8B'
+LLAMA_BASE_DIR='/datadisk/tk/llama3_8b_ins'
+LLAMA_HF='/kblam_llama_unified/kblam_unified'
 PHI3_HF='/datadisk/data/gcrbackup/hf_models/phi3'
 DATASET_DIR='/datadisk/data/gcrbackup/oai_embd'
-CKPT_SAVE_DIR='/home/msalvaris/data/experiments/kblam/exp_v0.2'
+TEST_DATASET_DIR='/datadisk/data/train_test_split'
+CKPT_SAVE_DIR='/home/msalvaris/data/experiments/kblam/exp_v0.3.2'
+PHI3_MODEL_CHKPT='/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugKeyFromkey_OAI_synthetic_data_phi3_step_20000'
+ENCODER_FOR_PHI3_CHKPT='/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugFineTuneQueryKeyFromkey_synthetic_data_OAI_step_20000'
+LLAMA_MODEL_CHKPT='/datadisk/tk/llama3_8b_ins' 
+ENCODER_FOR_LLAMA_CHKPT='/datadisk/tk/encoder_ckpt_20000_OAI.pt'
+QUERY_HEAD_PATH='/datadisk/tk/learned_query_head_20000_OAI.pth'
+
+ATTN_SAVE_DIR='/datadisk/kblamatt2'
+LOG_SAVE_DIR='/datadisk/kblamatt2/acc_results'
+
+
 LR=1e-4
 TRAIN_KB_SIZE=0 # Randomly pick KB size during training time
-OUTLIER_RATIO=1 # Ratio of no-answer question in the batch, -1 stands for no such samples
+OUTLIER_RATIO=-1 # Ratio of no-answer question in the batch, -1 stands for no such samples
 KB_LAYER_FREQ=3 # How frequent to inject kb tokens into the layers
 MULTI_ENTITIES_NUM=2 # For questions that involve multiple entities, how many entities are involved.
 
 
 help:
 	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
+
+create_train_test_split:
+	python ../dataset_generation/create_train_test_split.py --data_path ${DATASET_DIR}/synthetic_data.json \
+															--embedding_keys_path ${DATASET_DIR}/synthetic_data_oai_embd_key.npy \
+															--embeddings_values_path ${DATASET_DIR}/synthetic_data_oai_embd_value.npy \
+															--output_path /datadisk/data/train_test_split \
+															--split_index 120000
+
 
 train: ## Train kb adapter
 	python train.py --model_dir ${LLAMA_BASE_DIR} \
@@ -68,7 +86,7 @@ train-oai: ## Train kb adapter
 					   --dataset gpt_data \
 					   --N 120000 \
 					   --B 2 \
-					   --steps 20001 \
+					   --steps 30001 \
 					   --encoder_spec OAI \
 					   --use_cached_embd \
 					   --key_embd_src key \
@@ -96,7 +114,7 @@ train-phi3-oai: ## Train kb adapter
 					--train_dataset synthetic_data \
 					--N 120000 \
 					--B 32 \
-					--steps 20001 \
+					--steps 30001 \
 					--encoder_spec OAI \
 					--use_cached_embd \
 					--key_embd_src key \
@@ -111,104 +129,202 @@ train-phi3-oai: ## Train kb adapter
 					--multi_entities ${MULTI_ENTITIES_NUM} \
 					--use_extended_qa \
 					--outlier_ratio ${OUTLIER_RATIO} \
-					--gradient_accm_step 10 \
+					--gradient_accm_step 20 \
 					--llm_type 'phi3' \
 					--use_cuda
 
-eval-phi3-oai: ## Eval kb adapter
-	python eval.py --seed 1607 \
-				--ckpt_idx 40000 \
-				--N 1000 \
-				--test_dataset gpt_data \
-				--train_dataset gpt_data \
-				--ckpt_idx 40000 \
-				--llm_ckpt_idx 40000 \
-				--use_oai_embd \
-				--dataset_dir ${DATASET_DIR} \
-				--ckpt_dir ${CKPT_SAVE_DIR} \
-				--model_dir ${PHI3_HF} \
-				--encoder_spec OAI \
-				--sep_query_head \
-				--exp_config_str '0#Yes' \
-				--use-cuda
 
-
-
-eval-gen-phi3-oai: ## Eval kb adapter
-	python eval.py \
-				generation \
-				--seed 1607 \
-				--test_dataset synthetic_data \
-				--ckpt_idx 20000 \
-				--llm_base_dir ${PHI3_HF} \
-				--encoder_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugFineTuneQueryKeyFromkey_synthetic_data_OAI_step_20000' \
-				--model_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugKeyFromkey_OAI_synthetic_data_phi3_step_20000' \
-				--dataset_dir ${DATASET_DIR} \
-				--encoder_spec oai \
-				--use_precomputed_embd \
-				--eval_mode 'kb' \
-				--save_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.2_eval' \
-				--kb_token_layer_frequency ${KB_LAYER_FREQ} \
-				--llm_type "phi3" \
-				--kb_size 100
-
+#----------------- phi eval --------------------------------------
 
 
 eval-acc-phi3-oai: ## Eval kb adapter
 	python eval.py accuracy \
 		--seed 1607 \
-		--dataset_dir ${DATASET_DIR} \
-		--test_dataset synthetic_data \
+		--dataset_dir ${TEST_DATASET_DIR} \
+		--test_dataset test_synthetic_data.json \
 		--llm_base_dir ${PHI3_HF} \
-		--model_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugKeyFromkey_OAI_synthetic_data_phi3_step_20000' \
-		--encoder_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugFineTuneQueryKeyFromkey_synthetic_data_OAI_step_20000' \
-		--save_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.2_eval' \
+		--model_dir ${PHI3_MODEL_CHKPT} \
+		--encoder_dir ${ENCODER_FOR_PHI3_CHKPT} \
+		--save_dir ${ATTN_SAVE_DIR} \
 		--kb_layer_frequency ${KB_LAYER_FREQ} \
-		--ckpt_idx 20000 \
-		--lr 0 \
-		--kb_size 100 \
+		--kb_size 3200 \
+		--kb_scale_factor 100 \
 		--no-fancy_instruction \
 		--encoder_spec oai \
 		--llm_type "phi3" \
-		--attn_save_dir "/datadisk/kblam_attention" \
-		--log_save_dir "/datadisk/kblam_attention/acc_results" 
+		--attn_save_dir ${ATTN_SAVE_DIR} \
+		--log_save_dir ${LOG_SAVE_DIR} \
+		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_key.npy \
+		--precomputed_embed_values_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_value.npy
+
+
+eval-acc-eval-phi3-oai: ## Eval kb adapter
+	python eval.py acc_results \
+		--seed 1607 \
+		--dataset_dir ${TEST_DATASET_DIR} \
+		--test_dataset test_synthetic_data.json \
+		--llm_base_dir ${PHI3_HF} \
+		--model_dir ${PHI3_MODEL_CHKPT} \
+		--encoder_dir ${ENCODER_FOR_PHI3_CHKPT} \
+		--save_dir ${ATTN_SAVE_DIR} \
+		--kb_layer_frequency ${KB_LAYER_FREQ} \
+		--kb_size 3200 \
+		--kb_scale_factor 100 \
+		--no-fancy_instruction \
+		--encoder_spec oai \
+		--llm_type "phi3" \
+		--attn_save_dir ${ATTN_SAVE_DIR} \
+		--log_save_dir ${LOG_SAVE_DIR} \
+		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_key.npy \
+		--precomputed_embed_values_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_value.npy
+
+
+eval-gen-phi3-oai: ## Eval kb adapter
+	python eval.py generation \
+		--seed 1607 \
+		--dataset_dir ${TEST_DATASET_DIR} \
+		--test_dataset test_synthetic_data.json \
+		--llm_base_dir ${PHI3_HF} \
+		--model_dir ${PHI3_MODEL_CHKPT} \
+		--encoder_dir ${ENCODER_FOR_PHI3_CHKPT} \
+		--save_dir ${ATTN_SAVE_DIR} \
+		--kb_layer_frequency ${KB_LAYER_FREQ} \
+		--kb_size 3200 \
+		--kb_scale_factor 100 \
+		--no-fancy_instruction \
+		--encoder_spec oai \
+		--llm_type "phi3" \
+		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_key.npy \
+		--precomputed_embed_values_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_value.npy
 
 
 eval-ref-phi3-oai: ## Eval kb adapter
 	python eval.py refusal \
-				--seed 1607 \
-				--dataset_dir ${DATASET_DIR} \
-				--test_dataset synthetic_data \
-				--llm_base_dir ${PHI3_HF} \
-				--encoder_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugFineTuneQueryKeyFromkey_synthetic_data_OAI_step_20000' \
-				--model_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugKeyFromkey_OAI_synthetic_data_phi3_step_20000' \
-				--ckpt_idx 20000 \
-				--encoder_spec oai \
-				--use_precomputed_embd \
-				--eval_mode 'kb' \
-				--save_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.2_eval' \
-				--kb_token_layer_frequency ${KB_LAYER_FREQ} \
-				--llm_type "phi3" \
-				--kb_size 100
+		--seed 1607 \
+		--dataset_dir ${TEST_DATASET_DIR} \
+		--test_dataset test_synthetic_data.json \
+		--llm_base_dir ${PHI3_HF} \
+		--model_dir ${PHI3_MODEL_CHKPT} \
+		--encoder_dir ${ENCODER_FOR_PHI3_CHKPT} \
+		--save_dir ${ATTN_SAVE_DIR} \
+		--kb_layer_frequency ${KB_LAYER_FREQ} \
+		--kb_size 3200 \
+		--kb_scale_factor 100 \
+		--no-fancy_instruction \
+		--encoder_spec oai \
+		--llm_type "phi3" \
+		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_key.npy \
+		--precomputed_embed_values_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_value.npy
+
 
 
 eval-basic-phi3-oai: ## Eval kb adapter
-	python eval.py \
-				standard \
-				--seed 1607 \
-				--test_dataset synthetic_data \
-				--ckpt_idx 20000 \
-				--llm_base_dir ${PHI3_HF} \
-				--encoder_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugFineTuneQueryKeyFromkey_synthetic_data_OAI_step_20000' \
-				--model_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugKeyFromkey_OAI_synthetic_data_phi3_step_20000' \
-				--dataset_dir ${DATASET_DIR} \
-				--encoder_spec oai \
-				--use_precomputed_embd \
-				--eval_mode 'kb' \
-				--save_dir '/datadisk/data/gcrbackup/experiments/kblam/exp_v0.2_eval' \
-				--kb_token_layer_frequency ${KB_LAYER_FREQ} \
-				--llm_type "phi3" \
-				--kb_size 100 \
-				--exp_config_str "myconfig"
+	python eval.py standard \
+		--seed 1607 \
+		--dataset_dir ${TEST_DATASET_DIR} \
+		--test_dataset test_synthetic_data.json \
+		--llm_base_dir ${PHI3_HF} \
+		--model_dir ${PHI3_MODEL_CHKPT} \
+		--encoder_dir ${ENCODER_FOR_PHI3_CHKPT} \
+		--save_dir ${ATTN_SAVE_DIR} \
+		--kb_layer_frequency ${KB_LAYER_FREQ} \
+		--kb_size 3200 \
+		--kb_scale_factor 100 \
+		--no-fancy_instruction \
+		--encoder_spec oai \
+		--llm_type "phi3" \
+		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_key.npy \
+		--precomputed_embed_values_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_value.npy
+
+
+
+#----------------- llama eval --------------------------------------
+
+eval-acc-llama-oai: ## Eval kb adapter
+	python eval.py accuracy \
+		--seed 1607 \
+		--dataset_dir ${TEST_DATASET_DIR} \
+		--test_dataset test_synthetic_data.json \
+		--llm_base_dir ${LLAMA_BASE_DIR} \
+		--model_dir ${LLAMA_MODEL_CHKPT} \
+		--encoder_dir ${ENCODER_FOR_LLAMA_CHKPT} \
+		--save_dir ${ATTN_SAVE_DIR} \
+		--kb_layer_frequency ${KB_LAYER_FREQ} \
+		--kb_size 3200 \
+		--kb_scale_factor 100 \
+		--no-fancy_instruction \
+		--encoder_spec oai \
+		--llm_type "llama3" \
+		--attn_save_dir ${ATTN_SAVE_DIR} \
+		--log_save_dir ${LOG_SAVE_DIR} \
+		--query_head_path ${QUERY_HEAD_PATH} \
+		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_key.npy \
+		--precomputed_embed_values_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_value.npy 
+
+
+eval-acc-eval-llama-oai: ## Eval kb adapter
+	python eval.py acc_results \
+		--seed 1607 \
+		--dataset_dir ${TEST_DATASET_DIR} \
+		--test_dataset test_synthetic_data.json \
+		--llm_base_dir ${LLAMA_BASE_DIR} \
+		--model_dir ${LLAMA_MODEL_CHKPT} \
+		--encoder_dir ${ENCODER_FOR_LLAMA_CHKPT} \
+		--save_dir ${ATTN_SAVE_DIR} \
+		--kb_layer_frequency ${KB_LAYER_FREQ} \
+		--kb_size 100 \
+		--kb_scale_factor 100 \
+		--no-fancy_instruction \
+		--encoder_spec oai \
+		--llm_type "llama3" \
+		--attn_save_dir ${ATTN_SAVE_DIR} \
+		--log_save_dir ${LOG_SAVE_DIR} \
+		--query_head_path ${QUERY_HEAD_PATH} \
+		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_key.npy \
+		--precomputed_embed_values_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_value.npy 
+
+
+eval-ref-llama-oai: ## Eval kb adapter
+	python eval.py refusal \
+		--seed 1607 \
+		--dataset_dir ${TEST_DATASET_DIR} \
+		--test_dataset test_synthetic_data.json \
+		--llm_base_dir ${LLAMA_BASE_DIR} \
+		--model_dir ${LLAMA_MODEL_CHKPT} \
+		--encoder_dir ${ENCODER_FOR_LLAMA_CHKPT} \
+		--save_dir ${ATTN_SAVE_DIR} \
+		--kb_layer_frequency ${KB_LAYER_FREQ} \
+		--kb_size 100 \
+		--kb_scale_factor 100 \
+		--no-fancy_instruction \
+		--encoder_spec oai \
+		--llm_type "llama3" \
+		--query_head_path ${QUERY_HEAD_PATH} \
+		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_key.npy \
+		--precomputed_embed_values_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_value.npy 
+
+
+eval-basic-llama-oai: ## Eval kb adapter
+	python eval.py standard \
+		--seed 1607 \
+		--dataset_dir ${TEST_DATASET_DIR} \
+		--test_dataset test_synthetic_data.json \
+		--llm_base_dir ${LLAMA_BASE_DIR} \
+		--model_dir ${LLAMA_MODEL_CHKPT} \
+		--encoder_dir ${ENCODER_FOR_LLAMA_CHKPT} \
+		--save_dir ${ATTN_SAVE_DIR} \
+		--kb_layer_frequency ${KB_LAYER_FREQ} \
+		--exp_config_str "llama3_kb_scale_100" \
+		--kb_size 100 \
+		--kb_scale_factor 100 \
+		--no-fancy_instruction \
+		--encoder_spec oai \
+		--llm_type "llama3" \
+		--query_head_path ${QUERY_HEAD_PATH} \
+		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_key.npy \
+		--precomputed_embed_values_path ${TEST_DATASET_DIR}/test_synthetic_data_oai_embd_value.npy 
+
+
+
 
 .PHONY: train train-oai

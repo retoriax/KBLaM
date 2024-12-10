@@ -71,8 +71,8 @@ def aug_row(row: dict[str, str]) -> list[dict[str, str]]:
         "What insights can you provide about the {} of {}?",
         "What should I know about the {} of {}?",
     ]
-    dtype = row.description_type
-    name = row.name
+    dtype = row["description_type"]
+    name = row["name"]
     tid = np.random.randint(0, len(templates))
     return templates[tid].format(dtype, name)
 
