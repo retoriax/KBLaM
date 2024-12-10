@@ -907,6 +907,7 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         kb_kvs: Optional[tuple] = None,
+        kb_config: Optional[KBLaMConfig] = None,
         save_attention_weights: bool = False,
         attention_save_loc: Optional[str] = None,
         attention_file_base_name: Optional[str] = None,
@@ -955,7 +956,7 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             kb_kvs=kb_kvs,
-            kb_config=self.config,
+            kb_config=kb_config,
             save_attention_weights=save_attention_weights,
             attention_save_loc=attention_save_loc,
             attention_file_base_name=attention_file_base_name,
@@ -998,7 +999,7 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
         attention_mask=None,
         inputs_embeds=None,
         kb_kvs: Optional[tuple] = None,
-        # kb_config: Optional[KBLaMConfig] = None,
+        kb_config: Optional[KBLaMConfig] = None,
         # save_attention_weights: bool = False,
         # attention_save_loc: Optional[str] = None,
         # attention_file_base_name: Optional[str] = None,
@@ -1059,6 +1060,7 @@ class KBLaMPhi3ForCausalLM(Phi3PreTrainedModel):
                 "use_cache": kwargs.get("use_cache"),
                 "attention_mask": attention_mask,
                 "kb_kvs": kb_kvs,
+                "kb_config":kb_config
             }
         )
         return model_inputs

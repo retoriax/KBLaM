@@ -641,7 +641,9 @@ class KblamLlamaForCausalLM(LlamaPreTrainedModel):
 
     def __init__(self, config: LlamaConfig):
         super().__init__(config)
-        base_model_name_or_path = config.base_model_name_or_path if hasattr(config, "base_model_name_or_path") else config._name_or_path
+        base_model_name_or_path = (
+            config.base_model_name_or_path if hasattr(config, "base_model_name_or_path") else config._name_or_path
+        )
         self.model = LlamaModel.from_pretrained(base_model_name_or_path, torch_dtype=config.torch_dtype)
         self.vocab_size = self.model.config.vocab_size
         self.lm_head = nn.Linear(self.model.config.hidden_size, self.model.config.vocab_size, bias=False)
@@ -686,7 +688,6 @@ class KblamLlamaForCausalLM(LlamaPreTrainedModel):
         for i, attn_layer in enumerate(self.model.layers):
             attn_layer.self_attn.q_proj_new.load_state_dict(learned_query_heads[f'layer_{i}'])
         self.config.sep_query_head = True
-        
 
     @add_start_docstrings_to_model_forward(LLAMA_INPUTS_DOCSTRING)
     @replace_return_docstrings(output_type=CausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC)
@@ -704,6 +705,7 @@ class KblamLlamaForCausalLM(LlamaPreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
+        kb_config: Optional[KBLaMConfig] = None,
         save_attention_weights: bool = False,
         attention_save_loc: Optional[str] = None,
         attention_file_base_name: Optional[str] = None,
@@ -753,7 +755,7 @@ class KblamLlamaForCausalLM(LlamaPreTrainedModel):
             return_dict=return_dict,
             cache_position=cache_position,
             kb_kvs=kb_kvs,
-            kb_config=self.config,
+            kb_config=kb_config,
             save_attention_weights=save_attention_weights,
             attention_save_loc=attention_save_loc,
             attention_file_base_name=attention_file_base_name,
@@ -802,6 +804,7 @@ class KblamLlamaForCausalLM(LlamaPreTrainedModel):
         cache_position=None,
         use_cache=True,
         kb_kvs: Optional[tuple] = None,
+        kb_config: Optional[KBLaMConfig] = None,
         **kwargs,
     ):
         past_length = 0
@@ -870,6 +873,7 @@ class KblamLlamaForCausalLM(LlamaPreTrainedModel):
                 "use_cache": use_cache,
                 "attention_mask": attention_mask,
                 'kb_kvs': kb_kvs,
+                "kb_config": kb_config,
             }
         )
         return model_inputs

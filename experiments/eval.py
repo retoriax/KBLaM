@@ -19,7 +19,7 @@ from transformers import AutoTokenizer, logging
 
 from kblam.kb_encoder import KBEncoder
 from kblam.models.kblam_config import KBLaMConfig
-from kblam.models.llama3_2_model import KblamLlamaForCausalLM
+from kblam.models.llama3_model import KblamLlamaForCausalLM
 from kblam.models.phi3_model import KBLaMPhi3ForCausalLM
 from kblam.utils.data_utils import aug_row, generate_multi_entity_qa
 from kblam.utils.train_utils import get_kb_embd
@@ -89,9 +89,8 @@ def answer_question(
     model: KBLaMPhi3ForCausalLM | KblamLlamaForCausalLM,
     Q: str,
     kb=None,
-    kb_layer_frequency: int = 3,
     topk_size: int | None = None,
-    kb_scale_factor: int = -1,
+    kb_config:Optional[KBLaMConfig]=None
 ):
     for m in model_question_format_mapping:
         if isinstance(model, m):
@@ -100,8 +99,6 @@ def answer_question(
     input_ids, attention_masks = tokenizer_output['input_ids'], tokenizer_output['attention_mask']
 
     with torch.autograd.no_grad():
-        if kb_scale_factor == -1:
-            kb_scale_factor = None
 
         outputs = model.generate(
             input_ids=input_ids,
@@ -110,6 +107,7 @@ def answer_question(
             max_new_tokens=150,
             tokenizer=tokenizer,
             output_attentions=True,
+            kb_config=kb_config
         ).squeeze()
     outputs = tokenizer.decode(outputs, skip_special_tokens=False)
 
@@ -163,12 +161,11 @@ def perform_eval(
     tokenizer: transformers.PreTrainedTokenizer,
     kb_retriever: KBRetriever,
     encoder_model_spec: str,
+    kb_config: KBLaMConfig,
     eval_mode: str = 'kb',
-    kb_layer_frequency: int = 3,
     kb_size: int = 250,
     seed: int = 1,
     topk_size: int = -1,
-    kb_scale_factor: int = -1,
     multi_entites: int = -1,
     remove_sorry: bool = False,
 ):
@@ -214,9 +211,8 @@ def perform_eval(
                 model,
                 Q,
                 kb=kb_embedding,
-                kb_layer_frequency=kb_layer_frequency,
                 topk_size=topk_size,
-                kb_scale_factor=kb_scale_factor,
+                kb_config=kb_config
             ).split(Q)[1]
         elif eval_mode == 'icl':
             if multi_entites != -1:
@@ -224,7 +220,11 @@ def perform_eval(
             else:
                 ins_prompt = instruction_prompts
             model_output = answer_question(
-                tokenizer, model, ins_prompt + prompt_strs + Q, kb=None, kb_layer_frequency=kb_layer_frequency
+                tokenizer, 
+                model, 
+                ins_prompt + prompt_strs + Q, 
+                kb=None,
+                kb_config=kb_config
             ).split(Q)[1]
         elif eval_mode == 'zeroshot':
             if multi_entites != -1:
@@ -232,7 +232,11 @@ def perform_eval(
             else:
                 ins_prompt = zero_shot_prompt
             model_output = answer_question(
-                tokenizer, model, ins_prompt + Q, kb=None, kb_layer_frequency=kb_layer_frequency
+                tokenizer, 
+                model, 
+                ins_prompt + Q, 
+                kb=None,
+                kb_config=kb_config
             ).split(Q)[1]
         # print(model_output)
         if remove_sorry:
@@ -286,14 +290,13 @@ def perform_eval_refusal(
     model: KBLaMPhi3ForCausalLM | KblamLlamaForCausalLM,
     tokenizer: transformers.PreTrainedTokenizer,
     kb_retriever: KBRetriever,
+    kb_config:Optional[KBLaMConfig]=None,
     eval_mode: str = 'kb',
-    kb_layer_frequency: int = 3,
     kb_size: int = 250,
     seed: int = 1,
     outlier_ratio: float = 0.2,
     topk_size: int = -1,
     question_size: int = 100,
-    kb_scale_factor: int = 100,
 ):
 
     instruction_prompts = (
@@ -334,9 +337,8 @@ def perform_eval_refusal(
                 model,
                 Q,
                 kb=kb_embedding,
-                kb_layer_frequency=kb_layer_frequency,
                 topk_size=topk_size,
-                kb_scale_factor=kb_scale_factor,
+                kb_config=kb_config,
             ).split(Q)[1]
 
         elif eval_mode == "icl":
@@ -346,7 +348,7 @@ def perform_eval_refusal(
                 model,
                 instruction_prompts + prompt_strs + Q,
                 kb=None,
-                kb_layer_frequency=kb_layer_frequency,
+                kb_config=kb_config,
             ).split(Q)[1]
         elif eval_mode == "zeroshot":
             model_output = answer_question(
@@ -354,7 +356,7 @@ def perform_eval_refusal(
                 model,
                 zero_shot_prompt + Q,
                 kb=None,
-                kb_layer_frequency=kb_layer_frequency,
+                kb_config=kb_config,
             ).split(Q)[1]
         model_outputs.append(model_output)
         if i < change_point:
@@ -540,9 +542,7 @@ def eval_generate():
 
     dataset = json.load(open(os.path.join(dataset_dir, test_dataset)))
 
-    kb_layer_frequency = kb_layer_frequency
-
-    tokenizer, encoder, model = _prepare_models(
+    tokenizer, encoder, model, kb_config = _prepare_models(
         encoder_model_spec,
         encoder_path,
         llm_type,
@@ -565,13 +565,12 @@ def eval_generate():
         tokenizer,
         kb_retriever,
         encoder_model_spec,
+        kb_config,
         eval_mode,
-        kb_layer_frequency,
         seed=seed,
         kb_size=kb_size,
         topk_size=args.topk_size,
         multi_entites=args.multi_entites,
-        kb_scale_factor=kb_scale_factor,
     )
     mem_cost = torch.cuda.max_memory_reserved('cuda')
     score_results["mem_cost"] = mem_cost
@@ -616,15 +615,15 @@ def _prepare_models(
     model.generation_config.eos_token_id = tokenizer.eos_token_id
     model.eval()
 
-    config = model.config.to_dict()
+    # config = model.config.to_dict()
     kb_config = KBLaMConfig(
         sep_query_head=True,
         kb_layer_frequency=kb_layer_frequency,
         kb_scale_factor=kb_scale_factor,
     )
-    config.update(kb_config.to_dict())
-    new_config = KBLaMConfig(**config)
-    model.config = new_config
+    # config.update(kb_config.to_dict())
+    # new_config = KBLaMConfig(**config)
+    # model.config = new_config
 
     encoder = KBEncoder(
         encoder_name=encoder_spec.upper(),
@@ -637,7 +636,7 @@ def _prepare_models(
     )
 
     encoder.load_state_dict(torch.load(encoder_path))
-    return tokenizer, encoder, model
+    return tokenizer, encoder, model, kb_config
 
 
 def eval_accuracy(
@@ -647,7 +646,7 @@ def eval_accuracy(
     dataset,
     exp_config,
     fancy_question,
-    kb_layer_frequency,
+    kb_config,
     kb_size,
     llm_type,
     test_batch_size,
@@ -656,8 +655,6 @@ def eval_accuracy(
 ):
     """Evaluate accuracy using KB"""
 
-    if kb_layer_frequency == -1:
-        kb_layer_frequency = 3
 
     if kb_size == len(dataset):
         dataset_subset_idx = range(len(dataset))
@@ -693,8 +690,9 @@ def eval_accuracy(
             tokenizer=tokenizer,
             output_attentions=True,
             save_attention_weights=True,
+            kb_config=kb_config,
             attention_save_loc=attn_save_dir,
-            attention_file_base_name=exp_config,
+            attention_file_base_name=exp_config
         )
         outputs = tokenizer.batch_decode(outputs.squeeze(), skip_special_tokens=False)
 
@@ -708,7 +706,7 @@ def eval_accuracy(
 
     accs = []
     with torch.autograd.no_grad():
-        for idx in range(0, 32, kb_layer_frequency):
+        for idx in range(0, 32, kb_config.kb_layer_frequency):
             weight = np.load(os.path.join(attn_save_dir, f"{exp_config}_{idx}.npy"))
             weight = weight[..., :kb_size]
             label = np.arange(test_batch_size)
@@ -753,7 +751,7 @@ def eval_accuracy_cli():
     precomputed_embed_values_path = args.precomputed_embed_values_path
 
     query_head_path = args.query_head_path
-    tokenizer, encoder, model = _prepare_models(
+    tokenizer, encoder, model, kb_config = _prepare_models(
         encoder_spec,
         encoder_path,
         llm_type,
@@ -779,7 +777,7 @@ def eval_accuracy_cli():
         dataset,
         exp_config,
         fancy_question,
-        kb_layer_frequency,
+        kb_config,
         kb_size,
         llm_type,
         test_batch_size,
@@ -840,7 +838,7 @@ def run_accuracy_evalution():
     precomputed_embed_keys_path = args.precomputed_embed_keys_path
     precomputed_embed_values_path = args.precomputed_embed_values_path
 
-    tokenizer, encoder, model = _prepare_models(
+    tokenizer, encoder, model, kb_config = _prepare_models(
         encoder_spec,
         encoder_path,
         llm_type,
@@ -871,7 +869,7 @@ def run_accuracy_evalution():
             dataset,
             exp_config,
             fancy_question,
-            kb_layer_frequency,
+            kb_config,
             x,
             llm_type,
             min(x, 200),
@@ -906,7 +904,7 @@ def eval_refusal():
 
     dataset = json.load(open(os.path.join(dataset_dir, test_dataset)))
 
-    tokenizer, encoder, model = _prepare_models(
+    tokenizer, encoder, model, kb_config = _prepare_models(
         encoder_model_spec,
         encoder_path,
         llm_type,
@@ -928,16 +926,14 @@ def eval_refusal():
         model,
         tokenizer,
         kb_retriever,
-        eval_mode,
-        kb_layer_frequency,
+        eval_mode=eval_mode,
         seed=seed,
         kb_size=kb_size,
         topk_size=args.topk_size,
-        kb_scale_factor=kb_scale_factor,
+        kb_config=kb_config,
     )
 
     np.save(os.path.join(args.save_dir, "OutLierTest" + exp_config), refusal_results)
-
     text_file = open(os.path.join(args.save_dir, "OutLierTest" + exp_config + ".txt"), "w")
     text_file.write(gen_results)
 
@@ -982,7 +978,7 @@ def eval():
     os.environ["ATTN_SAVE_DIR"] = output_dir
     os.environ["EVAL_MODE"] = "1"
 
-    tokenizer, encoder, model = _prepare_models(
+    tokenizer, encoder, model, kb_config = _prepare_models(
         encoder_model_spec,
         encoder_path,
         llm_type,
@@ -1049,6 +1045,7 @@ def eval():
                 max_new_tokens=40,
                 tokenizer=tokenizer,
                 output_attentions=False,
+                kb_config=kb_config
             )
 
             outputs_true_kb = model.generate(
@@ -1061,6 +1058,7 @@ def eval():
                 save_attention_weights=True,
                 attention_save_loc=output_dir,
                 attention_file_base_name=config_str,
+                kb_config=kb_config
             )
         print("decoding")
         outputs_no_kb = tokenizer.batch_decode(outputs_no_kb, skip_special_tokens=False)
