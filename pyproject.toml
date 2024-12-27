@@ -2,8 +2,8 @@
 # Licensed under the MIT license.
 
 [build-system]
-requires = ["setuptools>=42.0.0", "setuptools-scm"]
-build-backend = "setuptools.build_meta"
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
 
 [project]
 name = "kblam"
@@ -32,12 +32,18 @@ dependencies = [
     "bert_score"
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "mypy>=1.5.1",
     "pre-commit",
     "pylint>=3.0.0",
     "pytest>=7.4.2",
+    "codespell",
+    "coverage",
+    "ipykernel",
+    "jinja2",
+    "ruff",
+    "pyright",
 ]
 
 experiment = [
@@ -45,7 +51,7 @@ experiment = [
     "wandb",
 ]
 
-all = ["kblam[dev,experiment,finetune]"]
+all = ["kblam[dev,experiment]"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -82,3 +88,6 @@ disable = [
 
 [tool.pylint.basic]
 docstring-min-length = 10
+
+[tool.pdm.build]
+includes = ["src"]

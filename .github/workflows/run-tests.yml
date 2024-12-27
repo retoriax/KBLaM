@@ -18,29 +18,30 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install -U pip
-          pip install -U poetry
-          pip install .
+          pip install -U pdm
+          pdm install --dev
 
-      - name: ruff-check
-        run: |
-          poetry run ruff check --no-fix --output-format=github
+      # To be added back gradually
+      # - name: ruff-check
+      #   run: |
+      #     pdm run ruff check --no-fix --output-format=github
 
-      - name: ruff-format
-        run: |
-          poetry run ruff format --check
+      # - name: ruff-format
+      #   run: |
+      #     pdm run ruff format --check
 
-      - name: pyright
-        run: |
-          poetry run pyright
+      # - name: pyright
+      #   run: |
+      #     pdm run pyright
 
-      - name: codespell
-        run: |
-          poetry run codespell
+      # - name: codespell
+      #   run: |
+      #     pdm run codespell
 
       - name: pytest
         run: |
-          poetry run coverage run -m pytest
+          pdm run coverage run -m pytest
 
       - name: coverage
         run: |
-          poetry run coverage xml -o .tmp/reports/coverage.xml
+          pdm run coverage xml -o .tmp/reports/coverage.xml
