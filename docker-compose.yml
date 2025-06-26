@@ -18,6 +18,8 @@ services:
       --hf_model_spec "DiscoResearch/Llama3-DiscoLeo-Instruct-8B-v0.1"
       --llm_type llama3
       --save_step 500
+      --use_extended_qa
+      --model_dir_to_resume /app/output/stage1_lr_0.0001KBTokenLayerFreq3UseOutlier1SepQueryHeadUseDataAugKeyFromkey_all-MiniLM-L6-v2_synthetic_data_ger_llama3_step_500
     environment:
       - HF_TOKEN=${HF_TOKEN}
       - WANDB_API_KEY=${WANDB_API_KEY}
