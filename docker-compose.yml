@@ -1,0 +1,31 @@
+services:
+  train:
+    container_name: train
+    image: harbor.hiqs.de/kbl_a_m/kblam_train:0.0.1
+    command: >
+      --dataset datasets
+      --train_dataset synthetic_data_ger
+      --B 1
+      --gradient_accm_step 400
+      --total_steps 20001
+      --use_cached_embd
+      --encoder_spec all-MiniLM-L6-v2
+      --sep_query_head
+      --kb_token_layer_frequency 3
+      --use_data_aug
+      --key_embd_src key
+      --N 120000
+      --hf_model_spec "DiscoResearch/Llama3-DiscoLeo-Instruct-8B-v0.1"
+      --llm_type llama3
+      --save_step 500
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - WANDB_API_KEY=${WANDB_API_KEY}
+    volumes:
+      - ~/.cache:/root/.cache
+      - /home/julian_sammet/Documents/datadisk/experiments/kblam/exp_v0.0.14:/app/output
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
