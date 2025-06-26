@@ -47,12 +47,26 @@ help:
 	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
 
 create_train_test_split:
-	python ../dataset_generation/create_train_test_split.py --data_path ${DATASET_DIR}/synthetic_data.json \
-															--embedding_keys_path ${DATASET_DIR}/synthetic_data_oai_embd_key.npy \
-															--embeddings_values_path ${DATASET_DIR}/synthetic_data_oai_embd_value.npy \
-															--output_path /datadisk/data/train_test_split \
+	python ../dataset_generation/create_train_test_split.py --data_path ../datasets/synthetic_data_ger.json \
+															--embedding_keys_path ../datasets/synthetic_data_ger_BigOAI_embd_key.npy \
+															--embeddings_values_path ../datasets/synthetic_data_ger_BigOAI_embd_value.npy \
+															--output_path ../datasets \
 															--split_index 120000
 
+
+train-julian_sammet: ## Train kb adapter julian_sammet
+	python train.py --dataset ../datasets \ 
+						--B 1 \
+						--gradient_accm_step 400 \
+						--llm_type llama3 \
+						--hf_model_spec "DiscoResearch/Llama3-DiscoLeo-Instruct-8B-v0.1" \
+						--use_cached_embd \
+						--train_dataset synthetic_data_ger \
+						--N 120000 \
+						--total_steps 20001 \
+						--encoder_spec all-MiniLM-L6-v2 \
+						--key_embd_src key \
+						--use_data_aug 
 
 train: ## Train kb adapter
 	python train.py --model_dir ${LLAMA_BASE_DIR} \
@@ -239,6 +253,25 @@ eval-basic-phi3-oai: ## Eval kb adapter
 
 
 #----------------- llama eval --------------------------------------
+
+eval-acc-llama: ## Eval kb adapter
+	python eval.py standard \
+		--seed 1 \
+		--dataset_dir /home/julian_sammet/Documents/repos/KBLaM/datasets/train_test_split \
+		--test_dataset test_synthetic.json \
+		--llm_base_dir /home/julian_sammet/Documents/datadisk/tk/Meta-Llama-3-8B-Instruct \
+		--model_dir /home/julian_sammet/Documents/repos/KBLaM/experiments/output/stage1_lr_0.0001KBTokenLayerFreq3UseOutlier1UseDataAugKeyFromkey_all-MiniLM-L6-v2_train_synthetic_llama3_step_14000 \
+		--encoder_dir /home/julian_sammet/Documents/repos/KBLaM/experiments/output/stage1_lr_0.0001KBTokenLayerFreq3UseOutlier1UseDataAugKeyFromkey_all-MiniLM-L6-v2_train_synthetic_llama3_step_14000_encoder/encoder.pt \
+		--save_dir /home/julian_sammet/Documents/datadisk/kblamatt2 \
+		--kb_layer_frequency 3 \
+		--kb_size -1 \
+		--kb_scale_factor 1 \
+		--no-fancy_instruction \
+		--encoder_spec all-MiniLM-L6-v2 \
+		--llm_type "llama3" \
+		--precomputed_embed_keys_path /home/julian_sammet/Documents/repos/KBLaM/datasets/train_test_split/test_synthetic_all-MiniLM-L6-v2_embd_key.npy \
+		--precomputed_embed_values_path /home/julian_sammet/Documents/repos/KBLaM/datasets/train_test_split/test_synthetic_all-MiniLM-L6-v2_embd_value.npy
+
 
 eval-acc-llama-oai: ## Eval kb adapter
 	python eval.py accuracy \

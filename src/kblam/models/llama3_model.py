@@ -118,15 +118,19 @@ class KblamLlamaAttention(nn.Module):
         self._init_rope()
 
     def _init_rope(self):
-        if self.config.rope_scaling is None:
+        rope_scaling = self.config.rope_scaling
+        if rope_scaling is None or (isinstance(rope_scaling, dict) and rope_scaling.get("rope_type") == "llama3"):
+            # Fallback to standard rotary embedding for llama3 or no scaling
+            if isinstance(rope_scaling, dict) and rope_scaling.get("rope_type") == "llama3":
+                logger.warning_once("Using fallback rotary embedding for llama3 rope_scaling.")
             self.rotary_emb = LlamaRotaryEmbedding(
                 self.head_dim,
                 max_position_embeddings=self.max_position_embeddings,
                 base=self.rope_theta,
             )
         else:
-            scaling_type = self.config.rope_scaling["type"]
-            scaling_factor = self.config.rope_scaling["factor"]
+            scaling_type = rope_scaling.get("type", None) or rope_scaling.get("rope_type", None)
+            scaling_factor = rope_scaling.get("factor", 1.0)
             if scaling_type == "linear":
                 self.rotary_emb = LlamaLinearScalingRotaryEmbedding(
                     self.head_dim,

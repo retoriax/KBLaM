@@ -25,7 +25,7 @@ from kblam.kb_encoder import KBEncoder
 from kblam.models.kblam_config import KBLaMConfig
 from kblam.models.llama3_model import KblamLlamaForCausalLM
 from kblam.models.phi3_model import KBLaMPhi3ForCausalLM
-from kblam.utils.data_utils import augment_row, generate_multi_entity_qa, get_i_dont_know_ans
+from kblam.utils.data_utils_ger import augment_row, generate_multi_entity_qa, get_i_dont_know_ans
 from kblam.utils.train_utils import context_set_size_scheduler, get_kb_embd, setup_scheduler_and_optimizer
 
 LOGFORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -70,7 +70,7 @@ parser.add_argument("--use_data_aug", action="store_true", help="Randomly pick t
 parser.add_argument("--use_lr_decay", action="store_true")
 parser.add_argument("--dataset_dir", type=str, default="synthetic_data")
 parser.add_argument("--model_dir_to_resume", type=str, default=None, help="Checkpoint directory to resume training")
-parser.add_argument("--hf_model_spec", type=str, default="meta-llama/Llama-3.2-1B-Instruct", choices=["meta-llama/Meta-Llama-3-8B-Instruct", "microsoft/Phi-3-mini-4k-instruct", "meta-llama/Llama-3.2-1B-Instruct"])
+parser.add_argument("--hf_model_spec", type=str, default="meta-llama/Llama-3.2-1B-Instruct", choices=["DiscoResearch/Llama3-DiscoLeo-Instruct-8B-v0.1","meta-llama/Meta-Llama-3-8B-Instruct", "microsoft/Phi-3-mini-4k-instruct", "meta-llama/Llama-3.2-1B-Instruct"])
 parser.add_argument("--hf_token", type=str,default=None,help="Huggingface token")
 parser.add_argument("--model_save_dir", type=str, default="output", help="Place to save the checkpoints")
 parser.add_argument("--kb_size", type=int, default=None, help="The size of the KB set size")
@@ -86,6 +86,8 @@ parser.add_argument("--verbose", action="store_true", help="Set logging to debug
 parser.add_argument("--log_to_file", action="store_true", help="Log to file as well as stdout")
 parser.add_argument("--llm_type",type=str,default="llama3",choices=["llama3", "phi3"])
 parser.add_argument("--max_seq_len",type=int,default=None)
+parser.add_argument("--save_step",type=int,default=1000)
+
 # fmt: on
 
 
@@ -602,6 +604,24 @@ class Trainer:
                         **step_config,
                     )
 
+                    # Nach _get_batch() Aufruf
+                    # print("===== DEBUG _get_batch() =====")
+                    # print(f"input_ids.shape: {input_ids.shape}")
+                    # print(f"attention_masks.shape: {attention_masks.shape}")
+                    # print(f"labels.shape: {labels.shape}")
+                    # print(f"batch_indices: {batch_indices}")
+                    # print("input_ids[0]:", input_ids[0].tolist())
+                    # print("labels[0]:", labels[0].tolist())
+
+                    # # Optional: dekodieren
+                    # input_str = self.tokenizer.decode(input_ids[0], skip_special_tokens=False)
+                    # label_ids = [id for id in labels[0].tolist() if id != -100]
+                    # label_str = self.tokenizer.decode(label_ids, skip_special_tokens=False)
+
+                    # print("DECODED input_ids[0]:", input_str)
+                    # print("DECODED labels[0]:", label_str)
+                    # print("==============================")
+
                     if a_step == 0 and step % 10 == 0:
                         self.logger.info(f"INPUT IDs SHAPE: {input_ids.shape}")
 
@@ -723,7 +743,7 @@ class Trainer:
                             self.logger.info("Saving config...")
                             # Explicitly save config as JSON
                             config_path = model_ckpt_name / "kb_config_explicit.json"
-                            with open(config_path, 'w') as f:
+                            with open(config_path, 'w', encoding="utf-8") as f:
                                 f.write(kb_config.to_json_string())
 
                     except Exception as e:
@@ -782,6 +802,7 @@ def main():
     hf_token = args.hf_token
     if not hf_token:
         hf_token = os.getenv("HF_TOKEN")
+    save_step = args.save_step
 
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -842,7 +863,7 @@ def main():
     logger.info(f"Experiment prefix {get_prefix_str(args)}")
 
     if use_extended_qa:
-        dataset = json.load(open(os.path.join(dataset_dir, f"{dataset_name}_augmented.json")))
+        dataset = json.load(open(os.path.join(dataset_dir, f"{dataset_name}_augmented.json"), "r", encoding="utf-8"))
     else:
         dataset = json.load(open(os.path.join(dataset_dir, f"{dataset_name}.json")))
 
@@ -888,6 +909,25 @@ def main():
     logger.info(model.config)  # type: ignore
 
     model.eval()  # type: ignore
+
+    # # === Debug Tokenizer ===
+    # samples = [
+    #     ("DE", "Was ist die Beschreibung von Erika Mustermann?"),
+    #     ("EN", "What is the description of Erika Mustermann?"),
+    #     ("DE", "Was sind die Ziele von BüroSynapse?"),
+    #     ("EN", "What are the goals of BüroSynapse?"),
+    #     ("DE", "Welche Absicht verfolgt das Projekt NovaLink?"),
+    #     ("EN", "What is the purpose of the NovaLink project?"),
+    #     ("DE", "Büro"),
+    #     ("EN", "Office"),
+    # ]
+    # print("\n--- Tokenizer Debug: EN vs DE ---")
+    # for lang, text in samples:
+    #     tokens = tokenizer.tokenize(text)
+    #     print(f"[{lang}] Input: {text}")
+    #     print(f"[{lang}] Tokens ({len(tokens)}): {tokens}\n")
+    # print("--- End Tokenizer Debug ---\n")
+
     # freeze model
     for _, param in model.named_parameters():  # type: ignore
         param.requires_grad = False
@@ -952,7 +992,7 @@ def main():
         use_data_aug=use_data_aug,
         multi_entities=multi_entities,
         use_extended_qa=use_extended_qa,
-        save_period=3000,
+        save_period=save_step,
         resumed_step=resumed_step,
         kb_config=kb_config,
     )

@@ -1,0 +1,26 @@
+# Build-Outputs & temporäre Dateien
+output/
+wandb/
+cache/
+__pycache__/
+*.py[cod]
+.Python
+.DS_Store
+
+# Python-Build-Systeme
+.venv/
+.pdm-build/
+.env
+
+# Git & Tests
+.git/
+.gitignore
+.github/
+tests/
+
+# Jupyter, Daten, Notebooks
+notebooks/
+data/
+
+# Optional: Dockerfile selbst (wenn nicht mitgebaut werden soll)
+Dockerfile
