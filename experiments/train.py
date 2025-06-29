@@ -25,7 +25,7 @@ from kblam.kb_encoder import KBEncoder
 from kblam.models.kblam_config import KBLaMConfig
 from kblam.models.llama3_model import KblamLlamaForCausalLM
 from kblam.models.phi3_model import KBLaMPhi3ForCausalLM
-from kblam.utils.data_utils_ger import augment_row, generate_multi_entity_qa, get_i_dont_know_ans
+from kblam.utils.data_utils import augment_row, generate_multi_entity_qa, get_i_dont_know_ans
 from kblam.utils.train_utils import context_set_size_scheduler, get_kb_embd, setup_scheduler_and_optimizer
 
 LOGFORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
