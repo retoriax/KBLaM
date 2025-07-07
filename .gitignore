@@ -125,6 +125,7 @@ celerybeat.pid
 .env
 .venv
 env/
+.*venv*
 venv/
 ENV/
 env.bak/
@@ -164,6 +165,7 @@ cython_debug/
 
 heatmap*
 
+.vscode
 output
 *.npy
 *.npz
