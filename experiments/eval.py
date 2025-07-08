@@ -135,7 +135,7 @@ def perform_eval(
                 model,
                 Q,
                 kb=kb_embedding,
-                topk_size=topk_size,
+                #topk_size=topk_size,
                 kb_config=kb_config,
             ).split(Q)[1]
         elif eval_mode == "icl":
@@ -261,7 +261,7 @@ def perform_eval_refusal(
                 model,
                 Q,
                 kb=kb_embedding,
-                topk_size=topk_size,
+                #topk_size=topk_size,
                 kb_config=kb_config,
             ).split(Q)[1]
 
@@ -597,7 +597,7 @@ def eval_generate():
         eval_mode,
         seed=seed,
         kb_size=kb_size,
-        topk_size=args.topk_size,
+        #topk_size=args.topk_size,
         multi_entites=args.multi_entites,
     )
     mem_cost = torch.cuda.max_memory_reserved("cuda")
@@ -663,7 +663,7 @@ def _prepare_models(
     # model.config = new_config
 
     encoder = KBEncoder(
-        encoder_name=encoder_spec.upper(),
+        encoder_name=encoder_spec,
         projector_type="linear",
         endpoint_url="",
         out_dim=model.config.hidden_size
@@ -976,7 +976,7 @@ def eval_refusal():
         eval_mode=eval_mode,
         seed=seed,
         kb_size=kb_size,
-        topk_size=args.topk_size,
+        #topk_size=args.topk_size,
         kb_config=kb_config,
     )
 
@@ -1043,7 +1043,7 @@ def eval():
 
     # Set up the encoder
     encoder = KBEncoder(
-        encoder_name=encoder_model_spec.upper(),
+        encoder_name=encoder_model_spec,
         projector_type="linear",
         endpoint_url="",
         out_dim=model.config.hidden_size  # type: ignore
