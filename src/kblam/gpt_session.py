@@ -2,11 +2,8 @@ import argparse
 import os
 import sys
 from pathlib import Path
-import time
-from openai import OpenAI
 from pydantic import BaseModel
-from langchain_openai import ChatOpenAI
-
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from azure.identity import (
     AuthenticationRecord,
     DeviceCodeCredential,
@@ -23,8 +20,7 @@ class Entity(BaseModel):
     purpose: str
     
 
-
-valid_models = ["gpt-4o", "ada-embeddings", "text-embedding-3-large"]
+valid_models = ["gpt-4o", "ada-embeddings", "text-embedding-ada-002", "text-embedding-3-large"]
 
 class GPT:
     def __init__(
@@ -41,10 +37,10 @@ class GPT:
         presence_penalty: int = 0,
         seed: int = None,
     ):
-        # if model_name not in valid_models:
-        #     raise ValueError(
-        #         f"Invalid model: {model_name}. Valid models are: {valid_models}"
-        #     )
+        if model_name not in valid_models:
+            raise ValueError(
+                f"Invalid model: {model_name}. Valid models are: {valid_models}"
+            )
 
         # token_provider = get_bearer_token_provider(
         #     self._get_credential(), "https://cognitiveservices.azure.com/.default"
@@ -56,18 +52,23 @@ class GPT:
         #     azure_ad_token_provider=token_provider,
         # )
 
-        self.OA_client = ChatOpenAI(
-            model_name=os.getenv("PROXY_MODEL"),
-            openai_api_base=os.getenv("PROXY_PATH"),
-            openai_api_key=os.getenv("PROXY_API_KEY"),
-            temperature=1,
-            max_tokens=4000
-        )    
+        if (model_name == "gpt-4o"):
+            self.OA_client = ChatOpenAI(
+                model_name=model_name,
+                openai_api_base=os.getenv("PROXY_PATH"),
+                openai_api_key=os.getenv("PROXY_API_KEY")
+            )    
+        else:
+            self.OA_client = OpenAIEmbeddings(
+                model=model_name,
+                openai_api_base=os.getenv("PROXY_EMBEDDING_PATH"),
+                openai_api_key=os.getenv("PROXY_EMBEDDING_API_KEY")
+            )   
 
 
         self.max_retries = max_retries
         self.system_msg = system_msg
-        self.model_name = os.getenv("PROXY_MODEL")
+        self.model_name = model_name
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.top_p = top_p
@@ -123,19 +124,22 @@ class GPT:
                 return completion.choices[0].message.content
         return None
 
-    def _api_call_embedding(self, text: str) -> list[float] | None:
+    def _api_call_embedding(self, text: str | list[str]) -> list[float] | list[list[float]] | None:
         for _ in range(self.max_retries):
-            embedding = self.OA_client.embeddings.create(
-                input=text, model=self.model_name
-            )
-            if embedding:
-                return embedding.data[0].embedding
+            if isinstance(text, str):
+                embedding = self.OA_client.embed_query(text)
+                if embedding:
+                    return embedding
+            else:
+                embeddings = self.OA_client.embed_documents(text)
+                if embeddings and all(isinstance(e, list) for e in embeddings):
+                    return embeddings
         return None
 
     def generate_response(self, prompt: str) -> str | None:
         """
         Generate a response for the given prompt.
-        This setup can be used for GPT4 models but not for embedding genneration.
+        This setup can be used for GPT4 models but not for embedding generation.
         """
         messages = [
             {

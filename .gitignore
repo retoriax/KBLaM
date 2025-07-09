@@ -123,7 +123,9 @@ celerybeat.pid
 
 # Environments
 .env
+dataset_generation/.env
 .venv
+.*env*
 env/
 venv/
 ENV/

@@ -5,10 +5,13 @@ import os
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
+import sys
 
 from kblam.gpt_session import GPT
 from kblam.utils.data_utils import DataPoint
 
+from dotenv import load_dotenv
+load_dotenv()
 
 def parser_args():
     parser = argparse.ArgumentParser()
@@ -16,7 +19,7 @@ def parser_args():
         "--model_name",
         type=str,
         default="text-embedding-3-large",
-        choices=["all-MiniLM-L6-v2", "text-embedding-3-large", "ada-embeddings"],
+        choices=["all-MiniLM-L6-v2", "text-embedding-3-large", "ada-embeddings", "text-embedding-ada-002"],
     )
     parser.add_argument("--dataset_name", type=str, default="synthetic_data")
     parser.add_argument("--endpoint_url", type=str)
@@ -69,15 +72,29 @@ if __name__ == "__main__":
     if args.model_name == "all-MiniLM-L6-v2":
         key_embeds = compute_embeddings(args.model_name, dataset, "key_string")
         value_embeds = compute_embeddings(args.model_name, dataset, "description")
-    elif args.model_name in ["ada-embeddings", "text-embedding-3-large"]:
+    elif args.model_name in ["ada-embeddings", "text-embedding-3-large", "text-embedding-ada-002"]:
         gpt = GPT(args.model_name, args.endpoint_url)
 
+        BATCH_SIZE = 20
         key_embeds = []
         value_embeds = []
 
-        for entity in tqdm(dataset):
-            key_embeds.append(gpt.generate_embedding(entity.key_string))
-            value_embeds.append(gpt.generate_embedding(entity.description))
+        key_batch = []
+        value_batch = []
+
+        for i, entity in enumerate(tqdm(dataset, desc="Generating embeddings")):
+            key_batch.append(entity.key_string)
+            value_batch.append(entity.description)
+
+            if len(key_batch) == BATCH_SIZE:
+                key_embeds.extend(gpt.generate_embedding(key_batch)) 
+                value_embeds.extend(gpt.generate_embedding(value_batch))
+                key_batch = []
+                value_batch = []
+
+        if key_batch:
+            key_embeds.extend(gpt.generate_embedding(key_batch))
+            value_embeds.extend(gpt.generate_embedding(value_batch))
     else:
         raise ValueError(f"Model {args.model_name} not supported.")
 
@@ -85,7 +102,7 @@ if __name__ == "__main__":
 
     if args.model_name == "all-MiniLM-L6-v2":
         save_name = "all-MiniLM-L6-v2"
-    elif args.model_name == "ada-embeddings":
+    elif args.model_name == "text-embedding-ada-002" or args.model_name == "ada-embeddings":
         save_name = "OAI"
     else:
         save_name = "BigOAI"
