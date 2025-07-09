@@ -1,7 +1,7 @@
 services:
   train:
     container_name: train
-    image: harbor.hiqs.de/kbl_a_m/kblam_train:en.0.1
+    image: harbor.hiqs.de/kbl_a_m/kblam_train:en
     command: >
       --dataset datasets
       --train_dataset synthetic
@@ -9,7 +9,7 @@ services:
       --gradient_accm_step 40
       --total_steps 20001
       --use_cached_embd
-      --encoder_spec BigOAI
+      --encoder_spec OAI
       --sep_query_head
       --kb_token_layer_frequency 3
       --use_data_aug
@@ -23,7 +23,8 @@ services:
       - WANDB_API_KEY=${WANDB_API_KEY}
     volumes:
       - ~/.cache:/root/.cache
-      - /home/julian_sammet/Documents/datadisk/experiments/kblam/exp_v0.0.16:/app/output
+      - /home/julian_sammet/Documents/datadisk/experiments/kblam/exp_v0.0.17:/app/output
+      - /home/julian_sammet/Documents/datadisk/data/datasets/OAI:/app/datasets
     deploy:
       resources:
         reservations:

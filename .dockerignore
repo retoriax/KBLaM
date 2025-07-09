@@ -6,15 +6,23 @@ __pycache__/
 *.py[cod]
 .Python
 .DS_Store
+.vscode/
+.datasets/
+.dataset_generation/
+tests
+
 
 # Python-Build-Systeme
 .venv/
 .pdm-build/
 .env
+.*env*
+.env.example
 
 # Git & Tests
 .git/
 .gitignore
+.gitattributes
 .github/
 tests/
 
@@ -24,3 +32,5 @@ data/
 
 # Optional: Dockerfile selbst (wenn nicht mitgebaut werden soll)
 Dockerfile
+docker-compose.yml
+
