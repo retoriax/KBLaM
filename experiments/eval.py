@@ -1010,7 +1010,7 @@ def eval():
     precomputed_embed_values_path = args.precomputed_embed_values_path
     query_head_path = args.query_head_path
     sep_query_head = True
-    actual_kb_token_layer_frequency = 3
+    actual_kb_token_layer_frequency = 1
 
     if kb_size == -1:
         kb_size = None

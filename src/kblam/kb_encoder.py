@@ -63,8 +63,8 @@ class KBEncoder(nn.Module, FeatureExtractionMixin):
         # Define the KB encoder backbone
         self.encoder_spec = encoder_name
 
-        if encoder_name in ["OAI", "BigOAI"]:
-            big = "Big" in encoder_name
+        if encoder_name.upper() in ["OAI", "BIGOAI"]:
+            big = "BIG" in encoder_name.upper()
             if get_oai_embd_online:
                 if big:
                     self.gs = GPT("text-embedding-3-large", endpoint_url)

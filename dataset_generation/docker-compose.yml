@@ -1,0 +1,15 @@
+services:
+  create:
+    container_name: create
+    image: wikidata:latest
+    tty: true  
+    command: >
+      --model_name ${MODEL_NAME}
+      --size 200000
+    environment:
+      - PROXY_API_KEY=${PROXY_API_KEY}
+      - PROXY_PATH=${PROXY_PATH}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ~/.cache:/root/.cache
+      - /home/julian_sammet/Documents/repos/KBLaM-vs-Rag/KBLaM/dataset:/app/dataset

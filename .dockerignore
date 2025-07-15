@@ -34,3 +34,13 @@ data/
 Dockerfile
 docker-compose.yml
 
+datasets/
+dataset_generation/
+**/Makefile
+*.json
+*.md
+!README.md
+**/*.py
+!**/train.py
+!src/**/*.py
+*.ipynb

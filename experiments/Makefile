@@ -20,19 +20,20 @@ print('\n'.join(output))
 endef
 export PRINT_HELP_PYSCRIPT # End of python section
 
-LLAMA_BASE_DIR='/home/julian_sammet/Documents/datadisk/tk/Llama-3.2-1B-Instruct'
+LLAMA_BASE_DIR='/home/julian_sammet/Documents/datadisk/tk/Meta-Llama-3-8B-Instruct'
 LLAMA_HF='/kblam_llama_unified/kblam_unified'
 PHI3_HF='/datadisk/data/gcrbackup/hf_models/phi3'
 DATASET_DIR='/datadisk/data/gcrbackup/oai_embd'
-TEST_DATASET_DIR='/home/julian_sammet/Documents/datadisk/data/datasets/BigOAI'
+TEST_DATASET_DIR='/home/julian_sammet/Documents/datadisk/experiments/kblam/exp_v0.0.17'
+TEST_DATASET='enron_data.json'
 CKPT_SAVE_DIR='/home/msalvaris/data/experiments/kblam/exp_v0.3.2'
 PHI3_MODEL_CHKPT='/home/julian_sammet/Documents/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugKeyFromkey_OAI_synthetic_data_phi3_step_20000'
 ENCODER_FOR_PHI3_CHKPT='/home/julian_sammet/Documents/datadisk/data/gcrbackup/experiments/kblam/exp_v0.1/stage1_lr_0.0001KBTokenLayerFreq3UseExtendedQAMultiEntities2UseOutlier1NoDuplicateKBSizedynamicSepQueryHeadUseDataAugFineTuneQueryKeyFromkey_synthetic_data_OAI_step_20000'
-LLAMA_MODEL_CHKPT='/home/julian_sammet/Documents/datadisk/experiments/kblam/exp_v0.0.16/stage1_lr_0.0001KBTokenLayerFreq3UseOutlier1SepQueryHeadUseDataAugKeyFromkey_BigOAI_synthetic_llama3_step_4000' 
-ENCODER_FOR_LLAMA_CHKPT='/home/julian_sammet/Documents/datadisk/experiments/kblam/exp_v0.0.16/stage1_lr_0.0001KBTokenLayerFreq3UseOutlier1SepQueryHeadUseDataAugKeyFromkey_BigOAI_synthetic_llama3_step_4000_encoder/encoder.pt'
+LLAMA_MODEL_CHKPT='/home/julian_sammet/Documents/datadisk/experiments/kblam/exp_v0.0.17/stage1_lr_0.0001KBTokenLayerFreq1UseOutlier1SepQueryHeadUseDataAugKeyFromkey_OAI_enron_data_llama3_step_1500' 
+ENCODER_FOR_LLAMA_CHKPT='/home/julian_sammet/Documents/datadisk/experiments/kblam/exp_v0.0.17/stage1_lr_0.0001KBTokenLayerFreq1UseOutlier1SepQueryHeadUseDataAugKeyFromkey_OAI_enron_data_llama3_step_1500_encoder/encoder.pt'
 QUERY_HEAD_PATH='/datadisk/tk/learned_query_head_20000_OAI.pth'
 
-ATTN_SAVE_DIR='/home/julian_sammet/Documents/datadisk/kblamatt2'
+ATTN_SAVE_DIR='/home/julian_sammet/Documents/datadisk/kblamatt3'
 LOG_SAVE_DIR='/datadisk/kblamatt2/acc_results'
 
 
@@ -254,30 +255,12 @@ eval-basic-phi3-oai: ## Eval kb adapter
 
 #----------------- llama eval --------------------------------------
 
-eval-acc-llama: ## Eval kb adapter
-	python eval.py standard \
-		--seed 1 \
-		--dataset_dir /home/julian_sammet/Documents/repos/KBLaM/datasets \
-		--test_dataset train_synthetic.json \
-		--llm_base_dir /home/julian_sammet/Documents/datadisk/tk/Meta-Llama-3-8B-Instruct \
-		--model_dir /home/julian_sammet/Documents/datadisk/experiments/kblam/exp_v0.0.15/stage1_lr_0.0001KBTokenLayerFreq3UseOutlier1SepQueryHeadUseDataAugKeyFromkey_all-MiniLM-L6-v2_synthetic_llama3_step_1500 \
-		--encoder_dir /home/julian_sammet/Documents/datadisk/experiments/kblam/exp_v0.0.15/stage1_lr_0.0001KBTokenLayerFreq3UseOutlier1SepQueryHeadUseDataAugKeyFromkey_all-MiniLM-L6-v2_synthetic_llama3_step_1500_encoder/encoder.pt \
-		--save_dir /home/julian_sammet/Documents/datadisk/kblamatt2 \
-		--kb_layer_frequency 3 \
-		--kb_size 200 \
-		--kb_scale_factor 1 \
-		--no-fancy_instruction \
-		--encoder_spec all-MiniLM-L6-v2 \
-		--llm_type "llama3" \
-		--precomputed_embed_keys_path /home/julian_sammet/Documents/repos/KBLaM/datasets/train_synthetic_all-MiniLM-L6-v2_embd_key.npy \
-		--precomputed_embed_values_path /home/julian_sammet/Documents/repos/KBLaM/datasets/train_synthetic_all-MiniLM-L6-v2_embd_value.npy
-
 
 eval-acc-llama-oai: ## Eval kb adapter
 	python eval.py accuracy \
 		--seed 1607 \
 		--dataset_dir ${TEST_DATASET_DIR} \
-		--test_dataset synthetic.json \
+		--test_dataset ${TEST_DATASET} \
 		--llm_base_dir ${LLAMA_BASE_DIR} \
 		--model_dir ${LLAMA_MODEL_CHKPT} \
 		--encoder_dir ${ENCODER_FOR_LLAMA_CHKPT} \
@@ -299,7 +282,7 @@ eval-acc-eval-llama-oai: ## Eval kb adapter
 	python eval.py acc_results \
 		--seed 1607 \
 		--dataset_dir ${TEST_DATASET_DIR} \
-		--test_dataset test_synthetic_data.json \
+		--test_dataset ${TEST_DATASET} \
 		--llm_base_dir ${LLAMA_BASE_DIR} \
 		--model_dir ${LLAMA_MODEL_CHKPT} \
 		--encoder_dir ${ENCODER_FOR_LLAMA_CHKPT} \
@@ -321,7 +304,7 @@ eval-ref-llama-oai: ## Eval kb adapter
 	python eval.py refusal \
 		--seed 1607 \
 		--dataset_dir ${TEST_DATASET_DIR} \
-		--test_dataset synthetic.json \
+		--test_dataset ${TEST_DATASET} \
 		--llm_base_dir ${LLAMA_BASE_DIR} \
 		--model_dir ${LLAMA_MODEL_CHKPT} \
 		--encoder_dir ${ENCODER_FOR_LLAMA_CHKPT} \
@@ -340,19 +323,18 @@ eval-basic-llama-oai: ## Eval kb adapter
 	python eval.py generation \
 		--seed 1607 \
 		--dataset_dir ${TEST_DATASET_DIR} \
-		--test_dataset synthetic.json \
+		--test_dataset ${TEST_DATASET} \
 		--llm_base_dir ${LLAMA_BASE_DIR} \
 		--model_dir ${LLAMA_MODEL_CHKPT} \
 		--encoder_dir ${ENCODER_FOR_LLAMA_CHKPT} \
 		--save_dir ${ATTN_SAVE_DIR} \
-		--kb_layer_frequency ${KB_LAYER_FREQ} \
-		--kb_size 100 \
-		--kb_scale_factor 100 \
-		--no-fancy_instruction \
-		--encoder_spec BigOAI \
+		--kb_layer_frequency 1 \
+		--kb_size 300 \
+		--kb_scale_factor 200 \
+		--encoder_spec OAI \
 		--llm_type "llama3" \
-		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/synthetic_BigOAI_embd_key.npy \
-		--precomputed_embed_values_path ${TEST_DATASET_DIR}/synthetic_BigOAI_embd_value.npy 
+		--precomputed_embed_keys_path ${TEST_DATASET_DIR}/enron_data_oai_embd_key.npy \
+		--precomputed_embed_values_path ${TEST_DATASET_DIR}/enron_data_oai_embd_value.npy 
 
 
 
