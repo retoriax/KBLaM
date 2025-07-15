@@ -1,0 +1,38 @@
+[
+  {
+    "task_id": "DIFF-0001",
+    "title": "New file added: import_readme.md",
+    "description": "File 'import_readme.md' was added in branch 'import-repoB' but does not exist in branch 'julian'.\nFile size: 29 bytes\nAction required: Review the new file and decide if it should be integrated.",
+    "file_path": "import_readme.md",
+    "change_type": "added",
+    "priority": "high",
+    "diff_content": "# Import from Repo B version"
+  },
+  {
+    "task_id": "DIFF-0002",
+    "title": "New file added: src/kblam/import_feature.py",
+    "description": "File 'src/kblam/import_feature.py' was added in branch 'import-repoB' but does not exist in branch 'julian'.\nFile size: 135 bytes\nAction required: Review the new file and decide if it should be integrated.",
+    "file_path": "src/kblam/import_feature.py",
+    "change_type": "added",
+    "priority": "high",
+    "diff_content": "def import_function():\\n    return 'Import from repo B implementation'\\n\\ndef shared_utility():\\n    return 'Different implementation'"
+  },
+  {
+    "task_id": "DIFF-0003",
+    "title": "File deleted: to_be_deleted.txt",
+    "description": "File 'to_be_deleted.txt' exists in branch 'julian' but was deleted in branch 'import-repoB'.\nOriginal file size: 28 bytes\nAction required: Review if the file deletion should be applied.",
+    "file_path": "to_be_deleted.txt",
+    "change_type": "deleted",
+    "priority": "high",
+    "diff_content": "# This file will be deleted"
+  },
+  {
+    "task_id": "DIFF-0004",
+    "title": "File modified: src/kblam/julian_feature.py",
+    "description": "File 'src/kblam/julian_feature.py' has different content between branch 'julian' and branch 'import-repoB'.\nSize change: 128 -> 59 bytes\nAction required: Review the changes and merge appropriately.",
+    "file_path": "src/kblam/julian_feature.py",
+    "change_type": "modified",
+    "priority": "medium",
+    "diff_content": "diff --git a/src/kblam/julian_feature.py b/src/kblam/julian_feature.py\nindex a1749f0..bc58941 100644\n--- a/src/kblam/julian_feature.py\n+++ b/src/kblam/julian_feature.py\n@@ -1,2 +1 @@\n def julian_function():\\n    return 'Julian implementation'\n-def shared_utility():\\n    return 'Julian implementation of utility'"
+  }
+]
