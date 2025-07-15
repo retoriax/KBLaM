@@ -5,7 +5,6 @@ import os
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
-import sys
 
 from kblam.gpt_session import GPT
 from kblam.utils.data_utils import DataPoint
@@ -62,6 +61,34 @@ def compute_embeddings(
     assert len(embeddings) == len(all_elements)
     return embeddings
 
+def compute_embeddings_api(
+    model_name: str, dataset: list[DataPoint], batch_size: int = 20
+) -> tuple[list[list[float]]]:
+    """Compute embeddings using API."""
+    gpt = GPT(model_name, None)
+    key_embeds = []
+    value_embeds = []
+
+    key_batch = []
+    value_batch = []
+    for i, entity in enumerate(tqdm(dataset, desc="Generating embeddings")):
+        key_batch.append(entity.key_string)
+        value_batch.append(entity.description)
+
+        if len(key_batch) == batch_size:
+            key_embeds.extend(gpt.generate_embedding(key_batch))
+            value_embeds.extend(gpt.generate_embedding(value_batch))
+            key_batch = []
+            value_batch = []
+
+    if key_batch:
+        key_embeds.extend(gpt.generate_embedding(key_batch))
+        value_embeds.extend(gpt.generate_embedding(value_batch))
+    
+    assert len(key_embeds) == len(dataset)
+    assert len(value_embeds) == len(dataset)
+    return key_embeds, value_embeds
+
 
 if __name__ == "__main__":
     args = parser_args()
@@ -73,28 +100,7 @@ if __name__ == "__main__":
         key_embeds = compute_embeddings(args.model_name, dataset, "key_string")
         value_embeds = compute_embeddings(args.model_name, dataset, "description")
     elif args.model_name in ["ada-embeddings", "text-embedding-3-large", "text-embedding-ada-002"]:
-        gpt = GPT(args.model_name, args.endpoint_url)
-
-        BATCH_SIZE = 20
-        key_embeds = []
-        value_embeds = []
-
-        key_batch = []
-        value_batch = []
-
-        for i, entity in enumerate(tqdm(dataset, desc="Generating embeddings")):
-            key_batch.append(entity.key_string)
-            value_batch.append(entity.description)
-
-            if len(key_batch) == BATCH_SIZE:
-                key_embeds.extend(gpt.generate_embedding(key_batch)) 
-                value_embeds.extend(gpt.generate_embedding(value_batch))
-                key_batch = []
-                value_batch = []
-
-        if key_batch:
-            key_embeds.extend(gpt.generate_embedding(key_batch))
-            value_embeds.extend(gpt.generate_embedding(value_batch))
+        key_embeds, value_embeds = compute_embeddings_api(args.model_name, dataset)
     else:
         raise ValueError(f"Model {args.model_name} not supported.")
 
