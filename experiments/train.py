@@ -910,24 +910,6 @@ def main():
 
     model.eval()  # type: ignore
 
-    # # === Debug Tokenizer ===
-    # samples = [
-    #     ("DE", "Was ist die Beschreibung von Erika Mustermann?"),
-    #     ("EN", "What is the description of Erika Mustermann?"),
-    #     ("DE", "Was sind die Ziele von BüroSynapse?"),
-    #     ("EN", "What are the goals of BüroSynapse?"),
-    #     ("DE", "Welche Absicht verfolgt das Projekt NovaLink?"),
-    #     ("EN", "What is the purpose of the NovaLink project?"),
-    #     ("DE", "Büro"),
-    #     ("EN", "Office"),
-    # ]
-    # print("\n--- Tokenizer Debug: EN vs DE ---")
-    # for lang, text in samples:
-    #     tokens = tokenizer.tokenize(text)
-    #     print(f"[{lang}] Input: {text}")
-    #     print(f"[{lang}] Tokens ({len(tokens)}): {tokens}\n")
-    # print("--- End Tokenizer Debug ---\n")
-
     # freeze model
     for _, param in model.named_parameters():  # type: ignore
         param.requires_grad = False
@@ -944,8 +926,10 @@ def main():
     )
 
     if model_dir_to_resume:
-        encoder.load_state_dict(torch.load(os.path.join(model_dir_to_resume, "encoder.pt")))
-        kb_config = KBLaMConfig.from_pretrained(os.path.join(model_dir_to_resume, "kb_config.json"))
+        encoder_dir = model_dir_to_resume + "_encoder"
+        encoder.load_state_dict(torch.load(os.path.join(encoder_dir, "encoder.pt")))
+        config_path = os.path.join(model_dir_to_resume, "kb_config_explicit.json")
+        kb_config = KBLaMConfig.from_pretrained(config_path)
     else:
         kb_config = KBLaMConfig(
             sep_query_head=sep_query_head,
