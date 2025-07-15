@@ -9,6 +9,8 @@ from tqdm import tqdm
 from kblam.gpt_session import GPT
 from kblam.utils.data_utils import DataPoint
 
+from dotenv import load_dotenv
+load_dotenv()
 
 def parser_args():
     parser = argparse.ArgumentParser()
@@ -16,7 +18,7 @@ def parser_args():
         "--model_name",
         type=str,
         default="text-embedding-3-large",
-        choices=["all-MiniLM-L6-v2", "text-embedding-3-large", "ada-embeddings"],
+        choices=["all-MiniLM-L6-v2", "text-embedding-3-large", "ada-embeddings", "text-embedding-ada-002"],
     )
     parser.add_argument("--dataset_name", type=str, default="synthetic_data")
     parser.add_argument("--endpoint_url", type=str)
@@ -59,25 +61,46 @@ def compute_embeddings(
     assert len(embeddings) == len(all_elements)
     return embeddings
 
+def compute_embeddings_api(
+    model_name: str, dataset: list[DataPoint], batch_size: int = 20
+) -> tuple[list[list[float]]]:
+    """Compute embeddings using API."""
+    gpt = GPT(model_name, None)
+    key_embeds = []
+    value_embeds = []
+
+    key_batch = []
+    value_batch = []
+    for i, entity in enumerate(tqdm(dataset, desc="Generating embeddings")):
+        key_batch.append(entity.key_string)
+        value_batch.append(entity.description)
+
+        if len(key_batch) == batch_size:
+            key_embeds.extend(gpt.generate_embedding(key_batch))
+            value_embeds.extend(gpt.generate_embedding(value_batch))
+            key_batch = []
+            value_batch = []
+
+    if key_batch:
+        key_embeds.extend(gpt.generate_embedding(key_batch))
+        value_embeds.extend(gpt.generate_embedding(value_batch))
+    
+    assert len(key_embeds) == len(dataset)
+    assert len(value_embeds) == len(dataset)
+    return key_embeds, value_embeds
+
 
 if __name__ == "__main__":
     args = parser_args()
-    with open(args.dataset_path, "r") as file:
-        loaded_dataset = json.loads(file.read())
+    with open(args.dataset_path, "r", encoding="utf-8") as file:
+        data = json.load(file)
+        dataset = [DataPoint(**item) for item in data]
 
-        dataset = [DataPoint(**line) for line in loaded_dataset]
     if args.model_name == "all-MiniLM-L6-v2":
         key_embeds = compute_embeddings(args.model_name, dataset, "key_string")
         value_embeds = compute_embeddings(args.model_name, dataset, "description")
-    elif args.model_name in ["ada-embeddings", "text-embedding-3-large"]:
-        gpt = GPT(args.model_name, args.endpoint_url)
-
-        key_embeds = []
-        value_embeds = []
-
-        for entity in tqdm(dataset):
-            key_embeds.append(gpt.generate_embedding(entity.key_string))
-            value_embeds.append(gpt.generate_embedding(entity.description))
+    elif args.model_name in ["ada-embeddings", "text-embedding-3-large", "text-embedding-ada-002"]:
+        key_embeds, value_embeds = compute_embeddings_api(args.model_name, dataset)
     else:
         raise ValueError(f"Model {args.model_name} not supported.")
 
@@ -85,7 +108,7 @@ if __name__ == "__main__":
 
     if args.model_name == "all-MiniLM-L6-v2":
         save_name = "all-MiniLM-L6-v2"
-    elif args.model_name == "ada-embeddings":
+    elif args.model_name == "text-embedding-ada-002" or args.model_name == "ada-embeddings":
         save_name = "OAI"
     else:
         save_name = "BigOAI"
