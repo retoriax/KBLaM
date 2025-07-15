@@ -316,22 +316,21 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--size", type=int, default=1000, help="Number of examples to generate")
     parser.add_argument("--output_path", type=str, default="dataset", help="Output directory")
-    parser.add_argument("--model_name", type=str, default="gpt-4o")
-    parser.add_argument("--dataset_name", type=str, default="realworld_dataset", help="Name of the dataset to generate")
+    parser.add_argument("--dataset_name", type=str, default="wiki_dataset", help="Name of the dataset to generate")
 
     args = parser.parse_args()
 
     load_dotenv()
-    llm_main = ChatOpenAI(
-        model_name=args.model_name,
-        openai_api_base=os.getenv("PROXY_PATH"),
-        openai_api_key=os.getenv("PROXY_API_KEY")
+    llm = ChatOpenAI(
+        model_name=os.getenv("WIKIDATA_MODEL_NAME"),
+        openai_api_base=os.getenv("WIKIDATA_PATH"),
+        openai_api_key=os.getenv("WIKIDATA_API_KEY")
     )
 
     generate_dataset(
         args.dataset_name,
         args.size,
         args.output_path,
-        llm_main,
+        llm,
         max_workers=2
     )

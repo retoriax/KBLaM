@@ -53,8 +53,8 @@ class GPT:
         else:
             self.OA_client = OpenAIEmbeddings(
                 model=model_name,
-                openai_api_base=os.getenv("PROXY_EMBEDDING_PATH"),
-                openai_api_key=os.getenv("PROXY_EMBEDDING_API_KEY")
+                openai_api_base=os.getenv("EMBEDDING_PATH"),
+                openai_api_key=os.getenv("EMBEDDING_API_KEY")
             )   
 
 

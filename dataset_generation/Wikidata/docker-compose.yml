@@ -4,11 +4,11 @@ services:
     image: wikidata:latest
     tty: true  
     command: >
-      --model_name ${MODEL_NAME}
       --size 200000
     environment:
-      - PROXY_API_KEY=${PROXY_API_KEY}
-      - PROXY_PATH=${PROXY_PATH}
+      - WIKIDATA_API_KEY=${WIKIDATA_API_KEY}
+      - WIKIDATA_PATH=${WIKIDATA_PATH}
+      - WIKIDATA_MODEL_NAME=${WIKIDATA_MODEL_NAME}
       - PYTHONUNBUFFERED=1
     volumes:
       - ~/.cache:/root/.cache
