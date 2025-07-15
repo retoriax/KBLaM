@@ -6,6 +6,11 @@ __pycache__/
 # C extensions
 *.so
 
+# Branch comparison output files
+branch_comparison_tasks.json
+comprehensive_comparison.json
+*_comparison.json
+
 # Distribution / packaging
 .Python
 build/
