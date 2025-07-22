@@ -18,6 +18,7 @@ from datasets import load_dataset
 import threading
 from dataclasses import dataclass
 
+from wikipedia_data_prompts import PROMPT_LANGUAGE_MAP, construct_prompts, get_key_string
 @dataclass
 class DataPoint:
     name: str
@@ -29,13 +30,6 @@ class DataPoint:
     extended_Q: str = None
     extended_A: str = None
 
-
-def construct_prompts(data: DataPoint) -> tuple[str, str, str]:
-    Q = f"What is the {data.description_type} of {data.name}?"
-    A = f"The {data.description_type} of {data.name} is {data.description}"
-    key_string = f"the {data.description_type} of {data.name}"
-    return Q, A, key_string
-
 def postprocess_llm_output(text: str) -> str:
     text = text.strip()
     return text[0].lower() + text[1:] if text and text[0].isupper() else text
@@ -44,27 +38,14 @@ def clean_json_str(text):
     # Removes ```json, ``` and leading/trailing newlines/whitespace
     return re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
 
-def infer_all_description_types(llm, text):
-    prompt = '''
-    For the following text, output a JSON object with the following keys (include only those that make sense):
-    - description: a concise, specific, factual noun-phrase summary (what is it?)
-    - objective: the practical function or goal (if not a person, place, event, season, list, or disambiguation)
-    - purpose: the broader human or societal intention or value (if present)
-    For subjects like persons, places, events, lists, or disambiguations, set 'objective' and/or 'purpose' to "Not applicable" if they don't make sense.
-    Example:
-    {
-      "description": "a quarterly DVD magazine published by McSweeney’s featuring short films and documentaries that had limited theatrical release",
-      "objective": "to provide a curated selection of rare films for film enthusiasts",
-      "purpose": "to make independent and obscure films accessible to a wider audience"
-    }
-    Text:
-    ''' + text[:3000]
-    output = call_chat(llm, prompt, prompt_type="description_types")
+def infer_all_description_types(llm, text, language):
+    prompt = PROMPT_LANGUAGE_MAP[language]["description_types"] + text[:3000]
+    output = call_chat(llm, prompt, prompt_type="description_types", language=language)
     try:
         parsed = json.loads(clean_json_str(output))
         # Filter fields that are not meaningful
         for k in ["description", "objective", "purpose"]:
-            if k in parsed and (not parsed[k] or parsed[k].strip().lower() in ["not applicable", "n/a", ""]):
+            if k in parsed and (not parsed[k] or parsed[k].strip().lower() in ["not applicable", "n/a", "", "nicht anwendbar", "keine angabe", "k.a.", "n.v.", "-"]):
                 del parsed[k]
         return parsed
     except Exception as e:
@@ -72,18 +53,9 @@ def infer_all_description_types(llm, text):
         return {}
     
     
-def call_chat(llm: ChatOpenAI, prompt: str, prompt_type: str) -> str:
+def call_chat(llm: ChatOpenAI, prompt: str, prompt_type: str, language: str) -> str:
     messages = [
-        SystemMessage(content=(
-            "You are an expert language model tasked with generating high-quality, structured knowledge base entries. Each response must:\n"
-            "- Start directly with the appropriate structure:\n"
-            "  - For 'description': generate a concise but informative summary of 1–2 sentences. It should include category, notable facts, time period, location, and 1–2 specific distinguishing features if available. Do not write a long paragraph or add redundant explanations.\n"
-            "  - For 'objective': use a precise verb phrase describing the functional goal (e.g., 'to document the evolution of...').\n"
-            "  - For 'purpose': use a verb phrase capturing the broader intention or benefit (e.g., 'to inform readers about...').\n"
-            "- Do NOT repeat or rephrase the question.\n"
-            "- Avoid filler, generic descriptions, or meta-commentary.\n"
-            "- Be as detailed and specific as possible while remaining concise.\n"
-        )),
+        SystemMessage(content=PROMPT_LANGUAGE_MAP[language]["system"]),
         HumanMessage(content=prompt)
     ]
     max_retries = 3
@@ -101,11 +73,12 @@ def call_chat(llm: ChatOpenAI, prompt: str, prompt_type: str) -> str:
         raise RuntimeError(f"Failed to get response from LLM after {max_retries} retries for prompt type '{prompt_type}'.")
 
 
-def generate_extended_QA(llm: ChatOpenAI, datapoint: DataPoint) -> None:
+def generate_extended_QA(llm: ChatOpenAI, datapoint: DataPoint, language: str) -> None:
     # Check if description is "not applicable", "n/a", or typical meta/list phrase
     _desc = (datapoint.description or datapoint.A or "").strip().lower()
     skip_phrases = [
-        "not applicable", "n/a", "see also", "list of", "this article", "overview of", "table of contents"
+        "not applicable", "n/a", "see also", "list of", "this article", "overview of", "table of contents",
+        "nicht anwendbar", "keine angabe", "k.a.", "n.v.", "-"
     ]
     if any(_desc.startswith(phrase) for phrase in skip_phrases):
         # fallback: extended_Q/A = Q/A, never leave empty
@@ -113,34 +86,20 @@ def generate_extended_QA(llm: ChatOpenAI, datapoint: DataPoint) -> None:
         datapoint.extended_A = datapoint.A
         return
 
-    prompt = (
-        "Rewrite the following Q&A for a curious but knowledgeable user. "
-        "The answer (extended_A) should be at most 2–3 sentences, focus on unique or noteworthy details not already in the original description, "
-        "and avoid unnecessary repetition or general information. Be concise and relevant.\n"
-        "Return the result as a JSON object with keys \"extended_Q\" and \"extended_A\".\n"
-        'Both "extended_Q" and "extended_A" must be valid JSON strings enclosed in double quotes. Only output valid JSON.\n\n'
-        f"Q: {datapoint.Q}\nA: {datapoint.description}"
-    )
-    output = call_chat(llm, prompt, prompt_type="extended")
+    prompt = PROMPT_LANGUAGE_MAP[language]["extended_qa"].format(Q=datapoint.Q, A=datapoint.description)
+    output = call_chat(llm, prompt, prompt_type="extended", language=language)
 
     # Try to parse JSON output first
     try:
         parsed_json = json.loads(clean_json_str(output))
         ext_q = parsed_json.get("extended_Q", "").strip()
         ext_a = parsed_json.get("extended_A", "").strip()
-        if not ext_q or not ext_a or ext_q.lower() in ["not applicable", "n/a"] or ext_a.lower() in ["not applicable", "n/a"]:
+        if not ext_q or not ext_a or ext_q.lower() in ["not applicable", "n/a", "nicht anwendbar", "keine angabe", "k.a.", "n.v.", "-"] or ext_a.lower() in ["not applicable", "n/a", "nicht anwendbar", "keine angabe", "k.a.", "n.v.", "-"]:
             datapoint.extended_Q = datapoint.Q
             datapoint.extended_A = datapoint.A
             return
         datapoint.extended_Q = ext_q
         datapoint.extended_A = ext_a
-        # Only append if not already redundant
-        if not datapoint.extended_A.lower().startswith(f"the {datapoint.description_type}".lower()):
-            datapoint.extended_A = f"The {datapoint.description_type} of {datapoint.name} is {datapoint.extended_A}"
-        else:
-            # Only insert name if not included
-            if datapoint.name not in datapoint.extended_A:
-                datapoint.extended_A = f"The {datapoint.description_type} of {datapoint.name} is {datapoint.extended_A}"
     except Exception:
         # Attempt to fix missing quotes around extended_Q and extended_A fields
         try:
@@ -159,19 +118,12 @@ def generate_extended_QA(llm: ChatOpenAI, datapoint: DataPoint) -> None:
                 parsed_json = json.loads(fixed_json_str)
                 ext_q = parsed_json.get("extended_Q", "").strip()
                 ext_a = parsed_json.get("extended_A", "").strip()
-                if not ext_q or not ext_a or ext_q.lower() in ["not applicable", "n/a"] or ext_a.lower() in ["not applicable", "n/a"]:
+                if not ext_q or not ext_a or ext_q.lower() in ["not applicable", "n/a", "nicht anwendbar", "keine angabe", "k.a.", "n.v.", "-"] or ext_a.lower() in ["not applicable", "n/a", "nicht anwendbar", "keine angabe", "k.a.", "n.v.", "-"]:
                     datapoint.extended_Q = datapoint.Q
                     datapoint.extended_A = datapoint.A
                     return
                 datapoint.extended_Q = ext_q
                 datapoint.extended_A = ext_a
-                # Only append if not already redundant
-                if not datapoint.extended_A.lower().startswith(f"the {datapoint.description_type}".lower()):
-                    datapoint.extended_A = f"The {datapoint.description_type} of {datapoint.name} is {datapoint.extended_A}"
-                else:
-                    # Only insert name if not included
-                    if datapoint.name not in datapoint.extended_A:
-                        datapoint.extended_A = f"The {datapoint.description_type} of {datapoint.name} is {datapoint.extended_A}"
                 return
         except Exception:
             pass
@@ -181,13 +133,6 @@ def generate_extended_QA(llm: ChatOpenAI, datapoint: DataPoint) -> None:
         if match:
             datapoint.extended_Q = match.group(1).strip()
             datapoint.extended_A = match.group(2).strip()
-            # Only append if not already redundant
-            if not datapoint.extended_A.lower().startswith(f"the {datapoint.description_type}".lower()):
-                datapoint.extended_A = f"The {datapoint.description_type} of {datapoint.name} is {datapoint.extended_A}"
-            else:
-                # Only insert name if not included
-                if datapoint.name not in datapoint.extended_A:
-                    datapoint.extended_A = f"The {datapoint.description_type} of {datapoint.name} is {datapoint.extended_A}"
         else:
             print(f"[Warning] Extended QA format not found for {datapoint.name}: {output}")
             datapoint.extended_Q = datapoint.Q
@@ -196,13 +141,13 @@ def generate_extended_QA(llm: ChatOpenAI, datapoint: DataPoint) -> None:
     # After LLM call: If extended_Q or extended_A is "not applicable", "n/a", or empty, fallback to Q/A
     _extq = (datapoint.extended_Q or "").strip().lower()
     _exta = (datapoint.extended_A or "").strip().lower()
-    _fallback_phrases = ["not applicable.", "not applicable", "n/a", ""]
+    _fallback_phrases = ["not applicable.", "not applicable", "n/a", "", "nicht anwendbar", "keine angabe", "k.a.", "n.v.", "-"]
     if _extq in _fallback_phrases or _exta in _fallback_phrases:
         datapoint.extended_Q = datapoint.Q
         datapoint.extended_A = datapoint.A
 
 
-def process_entity(idx, ds, seen_keys, llm, lock):
+def process_entity(idx, ds, seen_keys, llm, lock, language):
     entry = ds[idx]
     name = entry["title"]
     full_text = entry["text"]
@@ -212,12 +157,11 @@ def process_entity(idx, ds, seen_keys, llm, lock):
         return None
 
     try:
-        type_contents = infer_all_description_types(llm, full_text)
+        type_contents = infer_all_description_types(llm, full_text, language)
         descriptions = {}
         for k in ["description", "objective", "purpose"]:
-            key_str = f"the {k} of {name}"
             with lock:
-                if k in type_contents and key_str not in seen_keys:
+                if k in type_contents and get_key_string(name, k, language) not in seen_keys:
                     descriptions[k] = type_contents[k]
     except Exception as e:
         print(f"Type and content detection failed for entry '{name}':", e)
@@ -226,10 +170,10 @@ def process_entity(idx, ds, seen_keys, llm, lock):
     results = []
     for dtype, content in descriptions.items():
         dp = DataPoint(name=name, description_type=dtype, description=content)
-        dp.Q, dp.A, dp.key_string = construct_prompts(dp)
+        dp.Q, dp.A, dp.key_string = construct_prompts(dp, language)
         with lock:
             seen_keys.add(dp.key_string)
-        generate_extended_QA(llm, dp)
+        generate_extended_QA(llm, dp, language)
         results.append(dp)
     return results
 
@@ -270,10 +214,10 @@ def consolidate_tmp_to_final(tmp_path: str, final_path: str) -> list[dict]:
     return final_dataset
 
 
-def generate_dataset(name_dataset, size, output_path, llm, max_workers=8):
+def generate_dataset(name_dataset, size, output_path, llm, max_workers=8, language="en"):
     os.makedirs(output_path, exist_ok=True)
-    ds = load_dataset("wikimedia/wikipedia", "20231101.en")["train"]
-    existing_path = os.path.join(output_path, "realworld_dataset.tmp.json")
+    ds = load_dataset("wikimedia/wikipedia", f"20231101.{language}")["train"]
+    existing_path = os.path.join(output_path, f"{name_dataset}.tmp.json")
     dataset, seen_keys = load_existing_entries(existing_path)
     print(f"Loaded {len(dataset)} existing entries.")
 
@@ -284,15 +228,22 @@ def generate_dataset(name_dataset, size, output_path, llm, max_workers=8):
     to_generate = size - len(dataset)
     if to_generate <= 0:
         print(f"Dataset already contains {len(dataset)} entries, which meets or exceeds the requested size ({size}). Nothing to generate.")
+        temp_path = os.path.join(output_path, f"{name_dataset}.tmp.json")
+        final_path = os.path.join(output_path, f"{name_dataset}.json")
+        if not os.path.exists(final_path):
+            print("Final dataset does not exist yet. Consolidating temporary file to final dataset...")
+            final_dataset = consolidate_tmp_to_final(temp_path, final_path)
+            print(f"Final dataset written to {final_path} with {len(final_dataset)} entries.")
+        else:
+            print(f"Final dataset already exists at {final_path}.")
         return
-
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = []
         with tqdm(total=size, desc="Generating data", initial=len(dataset), file=sys.stdout, disable=not sys.stdout.isatty()) as pbar:
             for _ in range(to_generate):
                 idx = next(shuffled_indices)
                 futures.append(executor.submit(
-                    process_entity, idx, ds, seen_keys, llm, lock
+                    process_entity, idx, ds, seen_keys, llm, lock, language
                 ))
 
             for future in as_completed(futures):
@@ -316,7 +267,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--size", type=int, default=1000, help="Number of examples to generate")
     parser.add_argument("--output_path", type=str, default="dataset", help="Output directory")
+    parser.add_argument("--worker", type=int, default=1, help="How many workers to use for generation")
     parser.add_argument("--dataset_name", type=str, default="wiki_dataset", help="Name of the dataset to generate")
+    parser.add_argument("--language", type=str, default="en", choices=["en", "de"], help="Prompt language: 'en' (default) or 'de'")
 
     args = parser.parse_args()
 
@@ -332,5 +285,6 @@ if __name__ == "__main__":
         args.size,
         args.output_path,
         llm,
-        max_workers=2
+        max_workers=args.worker,
+        language=args.language
     )

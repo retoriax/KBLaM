@@ -5,6 +5,8 @@ services:
     tty: true  
     command: >
       --size 200000
+      --language de
+      --worker 2
     environment:
       - WIKIDATA_API_KEY=${WIKIDATA_API_KEY}
       - WIKIDATA_PATH=${WIKIDATA_PATH}

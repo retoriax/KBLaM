@@ -7,6 +7,8 @@ COPY README.md .
 
 RUN pip install --no-cache-dir -e .
 RUN pip install wandb
+RUN pip install langchain_openai
+RUN pip install langchain_core
 
 COPY . .
 

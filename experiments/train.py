@@ -835,7 +835,7 @@ def main():
 
     if args.log_to_file:
         formatter = logging.Formatter(LOGFORMAT)
-        f_handler = logging.FileHandler(model_save_dir / "log.txt")
+        f_handler = logging.FileHandler(os.path.join(model_save_dir, "log.txt"))
         f_handler.setFormatter(formatter)
         logger.addHandler(f_handler)
 

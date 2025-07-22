@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY entrypoint.sh .
 COPY gen_wikipedia_data.py .
+COPY wikipedia_data_prompts.py .
 
 RUN chmod +x ./entrypoint.sh
 
