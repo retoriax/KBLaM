@@ -11,11 +11,13 @@ class DataPoint:
     extended_A: str = None
 
 DESCRIPTION_TYPES_PROMPT = '''
-For the following text, output a JSON object with the following keys (include only those that make sense):
+For the following text, output exactly one JSON object with the following keys (include only those that make sense):
 - description: a concise, specific, factual noun-phrase summary (what is it?)
 - objective: the practical function or goal (if not a person, place, event, season, list, or disambiguation)
 - purpose: the broader human or societal intention or value (if present)
 For subjects like persons, places, events, lists, or disambiguations, set 'objective' and/or 'purpose' to "Not applicable" if they don't make sense.
+Only return a single JSON object, not a list or multiple entries.
+
 Example:
 {
   "description": "a quarterly DVD magazine published by McSweeney’s featuring short films and documentaries that had limited theatrical release",
@@ -26,11 +28,13 @@ Text:
 '''
 
 DESCRIPTION_TYPES_PROMPT_DE = '''
-Für den folgenden Text gib ein JSON-Objekt mit folgenden Schlüsseln aus (nur die, die sinnvoll sind):
+Für den folgenden Text gib genau ein JSON-Objekt mit folgenden Schlüsseln aus (nur die, die sinnvoll sind):
 - description: eine präzise, spezifische, sachliche Zusammenfassung als Nomenphrase (Was ist es?)
 - objective: die praktische Funktion oder das Ziel (wenn nicht Person, Ort, Ereignis, Jahreszeit, Liste oder Begriffsklärung)
 - purpose: die übergeordnete menschliche oder gesellschaftliche Absicht oder der Wert (falls vorhanden)
 Für Themen wie Personen, Orte, Ereignisse, Listen oder Begriffsklärungen setze 'objective' und/oder 'purpose' auf "Nicht anwendbar", wenn sie keinen Sinn ergeben.
+Gib nur ein einziges JSON-Objekt zurück, keine Liste und keine mehrfachen Einträge.
+
 Beispiel:
 {
   "description": "eine vierteljährlich erscheinende DVD-Zeitschrift von McSweeney’s mit Kurzfilmen und Dokumentationen, die nur begrenzt im Kino liefen",
@@ -65,7 +69,9 @@ SYSTEM_MESSAGE_PROMPT_DE = (
 
 
 EXTENDED_QA_PROMPT_TEMPLATE = (
+    "You are given a Wikipedia article excerpt:\n{TEXT}\n\n"
     "Rewrite the following Q&A for a curious but knowledgeable user. "
+    "The new question (\"extended_Q\") should be more interesting or specific than the original question. It may address related aspects or offer a deeper perspective. "
     "The answer (extended_A) should be at most 2–3 sentences, focus on unique or noteworthy details not already in the original description, "
     "and avoid unnecessary repetition or general information. Be concise and relevant.\n"
     "Return the result as a JSON object with keys \"extended_Q\" and \"extended_A\".\n"
@@ -74,7 +80,9 @@ EXTENDED_QA_PROMPT_TEMPLATE = (
 )
 
 EXTENDED_QA_PROMPT_TEMPLATE_DE = (
+    "Hier ist ein Ausschnitt aus einem Wikipedia-Artikel:\n{TEXT}\n\n"
     "Formuliere das folgende Q&A für eine neugierige, aber fachkundige Person um.\n"
+    "Die neue Frage (\"extended_Q\") soll interessanter oder spezifischer sein als die ursprüngliche Frage. Sie darf verwandte Aspekte oder weiterführende Perspektiven ansprechen.\n"
     "Die Antwort (extended_A) soll maximal 2–3 Sätze umfassen und sich auf einzigartige oder bemerkenswerte Details konzentrieren, die nicht schon in der Originalbeschreibung enthalten sind.\n"
     "Vermeide unnötige Wiederholungen oder allgemeine Informationen. Sei prägnant und relevant.\n"
     "Gib das Ergebnis als JSON-Objekt mit den Schlüsseln \"extended_Q\" und \"extended_A\" zurück.\n"

@@ -7,7 +7,6 @@ import time
 import itertools
 import sys
 
-from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -39,7 +38,7 @@ def clean_json_str(text):
     return re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
 
 def infer_all_description_types(llm, text, language):
-    prompt = PROMPT_LANGUAGE_MAP[language]["description_types"] + text[:3000]
+    prompt = PROMPT_LANGUAGE_MAP[language]["description_types"] + text[:1500]
     output = call_chat(llm, prompt, prompt_type="description_types", language=language)
     try:
         parsed = json.loads(clean_json_str(output))
@@ -62,8 +61,7 @@ def call_chat(llm: ChatOpenAI, prompt: str, prompt_type: str, language: str) -> 
     for attempt in range(max_retries):
         try:
             response = llm.invoke(messages).content.strip()
-            if response.lower().startswith(f"the {prompt_type}".lower()):
-                response = response[len(f"the {prompt_type}"):].lstrip(" :.-").strip()
+            #print(f"[{prompt_type}] LLM response: {response}")
             return postprocess_llm_output(response)
         except Exception as e:
             if attempt > 0:
@@ -73,7 +71,7 @@ def call_chat(llm: ChatOpenAI, prompt: str, prompt_type: str, language: str) -> 
         raise RuntimeError(f"Failed to get response from LLM after {max_retries} retries for prompt type '{prompt_type}'.")
 
 
-def generate_extended_QA(llm: ChatOpenAI, datapoint: DataPoint, language: str) -> None:
+def generate_extended_QA(llm: ChatOpenAI, datapoint: DataPoint, language: str, full_text: str) -> None:
     # Check if description is "not applicable", "n/a", or typical meta/list phrase
     _desc = (datapoint.description or datapoint.A or "").strip().lower()
     skip_phrases = [
@@ -86,7 +84,7 @@ def generate_extended_QA(llm: ChatOpenAI, datapoint: DataPoint, language: str) -
         datapoint.extended_A = datapoint.A
         return
 
-    prompt = PROMPT_LANGUAGE_MAP[language]["extended_qa"].format(Q=datapoint.Q, A=datapoint.description)
+    prompt = PROMPT_LANGUAGE_MAP[language]["extended_qa"].format(Q=datapoint.Q, A=datapoint.description, TEXT=full_text[:1500])
     output = call_chat(llm, prompt, prompt_type="extended", language=language)
 
     # Try to parse JSON output first
@@ -173,8 +171,10 @@ def process_entity(idx, ds, seen_keys, llm, lock, language):
         dp.Q, dp.A, dp.key_string = construct_prompts(dp, language)
         with lock:
             seen_keys.add(dp.key_string)
-        generate_extended_QA(llm, dp, language)
+        generate_extended_QA(llm, dp, language, full_text)
         results.append(dp)
+        
+    #print(f"Processed entity '{name}' with {len(results)} data points.")    
     return results
 
 
@@ -237,22 +237,33 @@ def generate_dataset(name_dataset, size, output_path, llm, max_workers=8, langua
         else:
             print(f"Final dataset already exists at {final_path}.")
         return
+
+    start_time = time.time()
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = []
-        with tqdm(total=size, desc="Generating data", initial=len(dataset), file=sys.stdout, disable=not sys.stdout.isatty()) as pbar:
-            for _ in range(to_generate):
-                idx = next(shuffled_indices)
-                futures.append(executor.submit(
-                    process_entity, idx, ds, seen_keys, llm, lock, language
-                ))
+        for _ in range(to_generate):
+            idx = next(shuffled_indices)
+            futures.append(executor.submit(
+                process_entity, idx, ds, seen_keys, llm, lock, language
+            ))
 
-            for future in as_completed(futures):
-                result = future.result()
-                if result:
+        completed = 0
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                with lock:
                     for dp in result:
                         dataset.append(dp)
                         append_datapoint_to_tmpfile(dp, os.path.join(output_path, f"{name_dataset}.tmp.json"))
-                        pbar.update(1)
+                    completed += len(result)
+                    if completed % 50 == 0 or completed == to_generate:
+                        elapsed = time.time() - start_time
+                        it_per_sec = completed / elapsed if elapsed > 0 else 0
+                        eta = (to_generate - completed) / it_per_sec if it_per_sec > 0 else 0
+                        elapsed_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
+                        eta_str = time.strftime("%H:%M:%S", time.gmtime(eta))
+                        percent = completed / to_generate * 100 if to_generate > 0 else 0
+                        print(f"Generate: {completed}/{to_generate} ({percent:.1f}%) [{elapsed_str}<{eta_str}, {it_per_sec:.2f}it/s]")
 
     print(f"Saved {len(dataset)} data points to {output_path}/{name_dataset}.tmp.json")
     print("Consolidating final dataset...")

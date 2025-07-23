@@ -4,9 +4,9 @@ services:
     image: wikidata:latest
     tty: true  
     command: >
-      --size 200000
+      --size 150000
       --language de
-      --worker 2
+      --worker 10
     environment:
       - WIKIDATA_API_KEY=${WIKIDATA_API_KEY}
       - WIKIDATA_PATH=${WIKIDATA_PATH}
@@ -14,4 +14,4 @@ services:
       - PYTHONUNBUFFERED=1
     volumes:
       - ~/.cache:/root/.cache
-      - /home/julian_sammet/Documents/repos/KBLaM-vs-Rag/KBLaM/dataset:/app/dataset
+      - /Users/julian/Documents/KBLaM-vs-Rag/KBLaM/dataset_generation/dataset:/app/dataset
