@@ -4,7 +4,7 @@ services:
     image: wikidata:latest
     tty: true  
     command: >
-      --size 150000
+      --size 110000
       --language de
       --worker 10
     environment:
@@ -13,5 +13,5 @@ services:
       - WIKIDATA_MODEL_NAME=${WIKIDATA_MODEL_NAME}
       - PYTHONUNBUFFERED=1
     volumes:
-      - ~/.cache:/root/.cache
-      - /Users/julian/Documents/KBLaM-vs-Rag/KBLaM/dataset_generation/dataset:/app/dataset
+      - C:\Users\Julian\.cache:/root/.cache
+      - C:\Users\Julian\IdeaProjects\KBLaM\dataset_generation\dataset:/app/dataset

@@ -3,3 +3,4 @@ datasets/synthetic_data_ger_augmented.json filter=lfs diff=lfs merge=lfs -text
 datasets/test_synthetic_data_ger.json filter=lfs diff=lfs merge=lfs -text
 dataset_generation/*.json filter=lfs diff=lfs merge=lfs -text
 dataset_generation/**/*.json filter=lfs diff=lfs merge=lfs -text
+dataset_generation/dataset/**/*.json filter=lfs diff=lfs merge=lfs -text
