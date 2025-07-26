@@ -25,7 +25,7 @@ from kblam.kb_encoder import KBEncoder
 from kblam.models.kblam_config import KBLaMConfig
 from kblam.models.llama3_model import KblamLlamaForCausalLM
 from kblam.models.phi3_model import KBLaMPhi3ForCausalLM
-from kblam.utils.data_utils import augment_row, generate_multi_entity_qa, get_i_dont_know_ans
+from kblam.utils.data_utils_ger import augment_row, generate_multi_entity_qa, get_i_dont_know_ans
 from kblam.utils.train_utils import context_set_size_scheduler, get_kb_embd, setup_scheduler_and_optimizer
 
 LOGFORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -603,24 +603,6 @@ class Trainer:
                         random_sample=True,
                         **step_config,
                     )
-
-                    # Nach _get_batch() Aufruf
-                    # print("===== DEBUG _get_batch() =====")
-                    # print(f"input_ids.shape: {input_ids.shape}")
-                    # print(f"attention_masks.shape: {attention_masks.shape}")
-                    # print(f"labels.shape: {labels.shape}")
-                    # print(f"batch_indices: {batch_indices}")
-                    # print("input_ids[0]:", input_ids[0].tolist())
-                    # print("labels[0]:", labels[0].tolist())
-
-                    # # Optional: dekodieren
-                    # input_str = self.tokenizer.decode(input_ids[0], skip_special_tokens=False)
-                    # label_ids = [id for id in labels[0].tolist() if id != -100]
-                    # label_str = self.tokenizer.decode(label_ids, skip_special_tokens=False)
-
-                    # print("DECODED input_ids[0]:", input_str)
-                    # print("DECODED labels[0]:", label_str)
-                    # print("==============================")
 
                     if a_step == 0 and step % 10 == 0:
                         self.logger.info(f"INPUT IDs SHAPE: {input_ids.shape}")

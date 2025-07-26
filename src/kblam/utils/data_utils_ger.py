@@ -7,6 +7,7 @@ def clean_name(name: str) -> str:
 TYPE_MAPPING = {
     "description": {"de": "Beschreibung", "article": "die"},
     "objectives": {"de": "Ziel", "article": "das"},
+    "objective": {"de": "Ziel", "article": "das"},
     "purpose": {"de": "Grund", "article": "der"},
 }
 

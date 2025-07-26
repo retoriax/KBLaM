@@ -62,7 +62,7 @@ def compute_embeddings(
     return embeddings
 
 def compute_embeddings_api(
-    model_name: str, dataset: list[DataPoint], batch_size: int = 20
+    model_name: str, dataset: list[DataPoint], batch_size: int = 200
 ) -> tuple[list[list[float]]]:
     """Compute embeddings using API."""
     gpt = GPT(model_name, None)
@@ -109,7 +109,7 @@ if __name__ == "__main__":
     if args.model_name == "all-MiniLM-L6-v2":
         save_name = "all-MiniLM-L6-v2"
     elif args.model_name == "text-embedding-ada-002" or args.model_name == "ada-embeddings":
-        save_name = "OAI"
+        save_name = "oai"
     else:
         save_name = "BigOAI"
 
