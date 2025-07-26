@@ -20,12 +20,16 @@ from kblam.kb_encoder import KBEncoder
 from kblam.models.kblam_config import KBLaMConfig
 from kblam.models.llama3_model import KblamLlamaForCausalLM
 from kblam.models.phi3_model import KBLaMPhi3ForCausalLM
-from kblam.utils.data_utils import augment_row, generate_multi_entity_qa
+from kblam.utils.data_utils_ger import augment_row, generate_multi_entity_qa
 from kblam.utils.eval_utils import (
     instruction_prompts,
     instruction_prompts_multi_entities,
     zero_shot_prompt,
     zero_shot_prompt_multi_entities,
+    instruction_prompts_ger,
+    instruction_prompts_multi_entities_ger,
+    zero_shot_prompt_ger,
+    zero_shot_prompt_multi_entities_ger,
     _format_Q_llama,
     _format_Q_phi3,
     model_prune_format_mapping,
@@ -97,11 +101,11 @@ def perform_eval(
     kb_idx = np.random.randint(0, len(kb_retriever.dataset), kb_size)
     test_kb = [kb_retriever.dataset[idx] for idx in kb_idx]
     kb_embedding = ()
-    key_str = [row["key_string"] for row in test_kb]
+    key_str = [row["key_string"].capitalize() for row in test_kb]
     value_str = [row["description"] for row in test_kb]
     prompt_strs = ""
     for k, v in zip(key_str, value_str):
-        prompt_strs += f"{k} is {v}; "
+        prompt_strs += f"{k} ist {v}; "
 
     kb_embedding = kb_retriever.get_key_embeddings(kb_idx)
 
@@ -140,9 +144,9 @@ def perform_eval(
             ).split(Q)[1]
         elif eval_mode == "icl":
             if multi_entites != -1:
-                ins_prompt = instruction_prompts_multi_entities
+                ins_prompt = instruction_prompts_multi_entities_ger
             else:
-                ins_prompt = instruction_prompts
+                ins_prompt = instruction_prompts_ger
             model_output = answer_question(
                 tokenizer,
                 model,
@@ -152,9 +156,9 @@ def perform_eval(
             ).split(Q)[1]
         elif eval_mode == "zeroshot":
             if multi_entites != -1:
-                ins_prompt = zero_shot_prompt_multi_entities
+                ins_prompt = zero_shot_prompt_multi_entities_ger
             else:
-                ins_prompt = zero_shot_prompt
+                ins_prompt = zero_shot_prompt_ger
             model_output = answer_question(
                 tokenizer, model, ins_prompt + Q, kb=None, kb_config=kb_config
             ).split(Q)[1]
@@ -190,8 +194,8 @@ def perform_eval(
     bertscore = bert_score.compute(
         predictions=model_outputs,
         references=answers,
-        lang="en",
-        model_type="microsoft/deberta-xlarge-mnli",
+        lang="de",
+        model_type="google-bert/bert-base-german-cased",
     )
     # bert_scores = []
     # bert_scores = {}
