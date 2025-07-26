@@ -20,16 +20,12 @@ from kblam.kb_encoder import KBEncoder
 from kblam.models.kblam_config import KBLaMConfig
 from kblam.models.llama3_model import KblamLlamaForCausalLM
 from kblam.models.phi3_model import KBLaMPhi3ForCausalLM
-from kblam.utils.data_utils_ger import augment_row, generate_multi_entity_qa
+from kblam.utils.data_utils import augment_row, generate_multi_entity_qa
 from kblam.utils.eval_utils import (
     instruction_prompts,
     instruction_prompts_multi_entities,
     zero_shot_prompt,
     zero_shot_prompt_multi_entities,
-    instruction_prompts_ger,
-    instruction_prompts_multi_entities_ger,
-    zero_shot_prompt_ger,
-    zero_shot_prompt_multi_entities_ger,
     _format_Q_llama,
     _format_Q_phi3,
     model_prune_format_mapping,
@@ -105,7 +101,7 @@ def perform_eval(
     value_str = [row["description"] for row in test_kb]
     prompt_strs = ""
     for k, v in zip(key_str, value_str):
-        prompt_strs += f"{k} ist {v}; "
+        prompt_strs += f"{k} ist {v}; " #en "is" de "ist"
 
     kb_embedding = kb_retriever.get_key_embeddings(kb_idx)
 
@@ -144,9 +140,9 @@ def perform_eval(
             ).split(Q)[1]
         elif eval_mode == "icl":
             if multi_entites != -1:
-                ins_prompt = instruction_prompts_multi_entities_ger
+                ins_prompt = instruction_prompts_multi_entities
             else:
-                ins_prompt = instruction_prompts_ger
+                ins_prompt = instruction_prompts
             model_output = answer_question(
                 tokenizer,
                 model,
@@ -156,9 +152,9 @@ def perform_eval(
             ).split(Q)[1]
         elif eval_mode == "zeroshot":
             if multi_entites != -1:
-                ins_prompt = zero_shot_prompt_multi_entities_ger
+                ins_prompt = zero_shot_prompt_multi_entities
             else:
-                ins_prompt = zero_shot_prompt_ger
+                ins_prompt = zero_shot_prompt
             model_output = answer_question(
                 tokenizer, model, ins_prompt + Q, kb=None, kb_config=kb_config
             ).split(Q)[1]
@@ -229,9 +225,6 @@ def perform_eval_refusal(
         'Please answer questions based on the given text with format: "The {property} of {name} is {description}",'
         ' if relevant information cannot be found in the text, please respond "I am sorry I cannot find relevant information in the KB".'
     )
-    zero_shot_prompt = """
-    Please answer the question in a very compact manner with format: The {property} of {name} is {description}
-    """
 
     np.random.seed(seed)
     kb_idx = np.random.randint(0, len(kb_retriever.dataset), kb_size)

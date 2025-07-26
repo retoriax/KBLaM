@@ -1,24 +1,3 @@
-# Type mappings for German KBLaM prompt handling
-TYPE_MAPPING = {
-    "description": {"de": "Beschreibung", "article": "die"},
-    "objectives": {"de": "Ziel", "article": "das"},
-    "purpose": {"de": "Grund", "article": "der"},
-}
-
-ARTICLE_CASES = {
-    "Beschreibung": {"nominativ": "die", "genitiv": "der", "dativ": "der", "akkusativ": "die"},
-    "Ziel": {"nominativ": "das", "genitiv": "des", "dativ": "dem", "akkusativ": "das"},
-    "Grund": {"nominativ": "der", "genitiv": "des", "dativ": "dem", "akkusativ": "den"},
-}
-
-def get_article(dtype: str, case: str = "nominativ") -> str:
-    de_type = TYPE_MAPPING.get(dtype, {}).get("de", dtype)
-    return ARTICLE_CASES.get(de_type, {}).get(case, "")
-
-# HINWEIS:
-# Die deutschen Prompts erwarten, dass {article} und {property} (bzw. {article}_{i}, {property}_{i}) korrekt per get_article() bzw. TYPE_MAPPING substituiert werden.
-# Beispiel: prompt.format(article=get_article("description"), property=TYPE_MAPPING["description"]["de"], name="Berlin")
-
 from typing import Optional
 
 import numpy as np
@@ -29,32 +8,26 @@ from kblam.models.kblam_config import KBLaMConfig
 from kblam.models.llama3_model import KblamLlamaForCausalLM
 from kblam.models.phi3_model import KBLaMPhi3ForCausalLM
 
+instruction_prompt: str
+instruction_prompt_multi_entities: str
+zero_shot_prompt: str
+zero_shot_prompt_multi_entities: str
+
+
 instruction_prompts = """
 Please answer questions based on the given text with format: "The {property} of {name} is {description}"
-"""
-instruction_prompts_ger = """
-Bitte beantworten Sie Fragen auf Grundlage des gegebenen Textes im Format: "{article} {property} von {name} ist {description}"
 """
 
 instruction_prompts_multi_entities = """
 Please answer questions based on the given text with format: "The {property} of {name1} is {description}; The {property} of {name2} is {description}; ..."
 """
-instruction_prompts_multi_entities_ger = """
-Bitte beantworten Sie Fragen auf Grundlage des gegebenen Textes im Format: "{article}_1 {property}_1 von {name}_1 ist {description}; {article}_2 {property}_2 von {name}_2 ist {description}; ..."
-"""
 
 zero_shot_prompt = """
 Please answer the question in a very compact manner with format: The {property} of {name} is {description}
 """
-zero_shot_prompt_ger = """
-Bitte beantworten Sie die Frage in sehr kompakter Form im Format: {article} {property} von {name} ist {description}
-"""
 
 zero_shot_prompt_multi_entities = """
 Please answer the question in a very compact manner with format: "The {property} of {name1} is {description}; The {property} of {name2} is {description}; ...
-"""
-zero_shot_prompt_multi_entities_ger = """
-Bitte beantworten Sie die Frage in sehr kompakter Form im Format: "{article} {property} von {name1} ist {description}; {article} {property} von {name2} ist {description}; ..."
 """
 
 

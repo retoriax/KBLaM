@@ -171,3 +171,5 @@ output
 *.npz
 wandb
 *.safetensors
+
+exp
