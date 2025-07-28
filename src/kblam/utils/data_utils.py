@@ -35,11 +35,11 @@ def save_entity(pair: Entity | DataPoint, output_file: str) -> None:
         print(e)
 
 
-def load_entities(inout_file: str) -> list[Entity | DataPoint]:
+def load_entities(input_file: str) -> list[Entity | DataPoint]:
     """Load entities from a file."""
     entities = []
     try:
-        with open(inout_file, "r") as f:
+        with open(input_file, "r") as f:
             for line in f:
                 entity = json.loads(line)
                 entities.append(entity)
