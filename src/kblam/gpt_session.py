@@ -4,13 +4,13 @@ import sys
 from pathlib import Path
 from pydantic import BaseModel
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from azure.identity import (
-    AuthenticationRecord,
-    DeviceCodeCredential,
-    TokenCachePersistenceOptions,
-    get_bearer_token_provider,
-)
-from openai import AzureOpenAI
+# from azure.identity import (
+#     AuthenticationRecord,
+#     DeviceCodeCredential,
+#     TokenCachePersistenceOptions,
+#     get_bearer_token_provider,
+# )
+# from openai import AzureOpenAI
 
 valid_models = ["gpt-4o", "ada-embeddings", "text-embedding-ada-002", "text-embedding-3-large"]
 
@@ -71,34 +71,34 @@ class GPT:
     def set_seed(self, seed: int):
         self.seed = seed
 
-    def _get_credential(self, lib_name: str = "azure_openai") -> DeviceCodeCredential:
-        """Retrieves a credential to be used for authentication in Azure"""
-        if sys.platform.startswith("win"):
-            auth_record_root_path = Path(os.environ["LOCALAPPDATA"])
-        else:
-            auth_record_root_path = Path.home()
+    # def _get_credential(self, lib_name: str = "azure_openai") -> DeviceCodeCredential:
+    #     """Retrieves a credential to be used for authentication in Azure"""
+    #     if sys.platform.startswith("win"):
+    #         auth_record_root_path = Path(os.environ["LOCALAPPDATA"])
+    #     else:
+    #         auth_record_root_path = Path.home()
 
-        auth_record_path = auth_record_root_path / lib_name / "auth_record.json"
-        cache_options = TokenCachePersistenceOptions(
-            name=f"{lib_name}.cache", allow_unencrypted_storage=True
-        )
+    #     auth_record_path = auth_record_root_path / lib_name / "auth_record.json"
+    #     cache_options = TokenCachePersistenceOptions(
+    #         name=f"{lib_name}.cache", allow_unencrypted_storage=True
+    #     )
 
-        if auth_record_path.exists():
-            with open(auth_record_path, "r") as f:
-                record_json = f.read()
-            deserialized_record = AuthenticationRecord.deserialize(record_json)
-            credential = DeviceCodeCredential(
-                authentication_record=deserialized_record,
-                cache_persistence_options=cache_options,
-            )
-        else:
-            auth_record_path.parent.mkdir(parents=True, exist_ok=True)
-            credential = DeviceCodeCredential(cache_persistence_options=cache_options)
-            record_json = credential.authenticate().serialize()
-            with open(auth_record_path, "w") as f:
-                f.write(record_json)
+    #     if auth_record_path.exists():
+    #         with open(auth_record_path, "r") as f:
+    #             record_json = f.read()
+    #         deserialized_record = AuthenticationRecord.deserialize(record_json)
+    #         credential = DeviceCodeCredential(
+    #             authentication_record=deserialized_record,
+    #             cache_persistence_options=cache_options,
+    #         )
+    #     else:
+    #         auth_record_path.parent.mkdir(parents=True, exist_ok=True)
+    #         credential = DeviceCodeCredential(cache_persistence_options=cache_options)
+    #         record_json = credential.authenticate().serialize()
+    #         with open(auth_record_path, "w") as f:
+    #             f.write(record_json)
 
-        return credential
+    #     return credential
 
     def api_call_chat(self, messages: list[dict]) -> str | None:
         for _ in range(self.max_retries):
